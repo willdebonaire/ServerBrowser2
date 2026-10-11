@@ -1,0 +1,46 @@
+# Runtime browser profile (cookies, logins, caches) — never commit credentials.
+# The folder itself is kept on the remote (empty) via profile/.gitkeep so the
+# expected layout is visible, but every real file inside stays local.
+profile/*
+!profile/.gitkeep
+
+# Dependencies
+node_modules/
+
+# Generated artifacts
+screenshots/
+*.backup
+# Runtime state (pids/urls of live tunnels) and local DuckDB files
+datastore/tunnel-state.json
+datastore/*.duckdb
+datastore/*.duckdb.wal
+
+# Local API keys (real store is ~/.config/serverbrowser/api-keys.json, 0600)
+api-keys.json
+# Personal / sensitive run data
+userdata/
+
+# Scraped data (200 CSVs, 5.9MB) — regenerated, not part of the public release
+csv/
+
+# Screenshots and runtime logs
+screenshots/
+*.png
+*.log
+
+# Run artifacts / recordings / backups
+*.bak
+*.backup
+*_harvest_log.txt
+*harvest_*.log
+*_harvest_stdout.log
+*_harvest*.json
+*_platform_harvest.json
+Recording *.js
+
+# Local-only session scripts — kept on disk, never pushed.
+# The folder stays on the remote (via .gitkeep + README) but its scripts
+# are intentionally kept out of version control and off the public remote.
+user-scripts/*
+!user-scripts/.gitkeep
+!user-scripts/README.md

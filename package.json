@@ -1,0 +1,24 @@
+{
+  "name": "ServerBrowser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stealth headed Google Chrome driven live via VNC + Playwright CDP",
+  "scripts": {
+    "vnc": "bash scripts/vnc-server.sh",
+    "live": "node scripts/live.js",
+    "live-run": "node scripts/live-run.js",
+    "connect": "node scripts/connect.js",
+    "connect-run": "node scripts/connect-run.js",
+    "local-chrome": "bash scripts/local-chrome.sh",
+    "standalone": "node standalone/index.js",
+    "tunnel": "node scripts/tunnel.js",
+    "drive-doc": "cat docs/LIVE-DRIVE.md",
+    "install": "bash scripts/install.sh"
+  },
+  "dependencies": {
+    "duckdb": "^1.4.4",
+    "marked": "^18.0.14",
+    "playwright": "^1.63.0",
+    "puppeteer": "^25.10.0"
+  }
+}
