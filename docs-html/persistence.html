@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Persistence</h1>
+<p><code>launch()</code> uses <code>chromium.launchPersistentContext()</code>, which writes a
+<strong>real Chrome user-data directory</strong> to disk. Everything Chrome would
+normally persist for a regular user profile persists across runs.</p>
+<h2>What survives between runs</h2>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Persisted?</th>
+<th>Where in the profile</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cookies</td>
+<td>✅</td>
+<td><code>Default/Cookies</code> (SQLite)</td>
+</tr>
+<tr>
+<td><code>localStorage</code></td>
+<td>✅</td>
+<td><code>Default/Local Storage/leveldb/</code></td>
+</tr>
+<tr>
+<td><code>sessionStorage</code></td>
+<td>❌ (per-session only)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>IndexedDB</code></td>
+<td>✅</td>
+<td><code>Default/IndexedDB/</code></td>
+</tr>
+<tr>
+<td>Service workers</td>
+<td>✅</td>
+<td><code>Default/Service Worker/</code></td>
+</tr>
+<tr>
+<td>Cache</td>
+<td>✅</td>
+<td><code>Default/Code Cache/</code>, <code>Default/Cache/</code></td>
+</tr>
+<tr>
+<td>Logins / autofill</td>
+<td>❌ (we explicitly turn this off)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Browsing history</td>
+<td>✅ (Chrome&#39;s default)</td>
+<td><code>Default/History</code></td>
+</tr>
+<tr>
+<td>Extensions</td>
+<td>❌ (we launch with <code>--disable-extensions</code>)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Permissions / grant decisions</td>
+<td>✅</td>
+<td><code>Default/Preferences</code></td>
+</tr>
+</tbody></table>
+<p>The reason logins and autofill are disabled: they&#39;re stored in
+detectable formats that a fresh, clean browser profile wouldn&#39;t have,
+and they leak into the fingerprint.</p>
+<h2>Default location</h2>
+<p>The default profile is:</p>
+<pre><code>&lt;this folder&gt;/profile/
+</code></pre>
+<p>Concretely, after one run you&#39;ll see:</p>
+<pre><code>profile/
+├── Default/
+│   ├── Cookies                ← SQLite, real Chrome format
+│   ├── Cookies-journal
+│   ├── Preferences            ← JSON, includes permission grants
+│   ├── Local Storage/         ← leveldb for localStorage
+│   ├── IndexedDB/             ← IndexedDB
+│   ├── Code Cache/
+│   ├── Cache/
+│   ├── History
+│   ├── ... many more
+├── Local State                ← top-level Chrome state
+├── Last Version
+├── GrShaderCache/
+├── GraphiteDawnCache/
+└── ...
+</code></pre>
+<h2>Using multiple profiles</h2>
+<p>Pass <code>--profile=PATH</code> (CLI) or <code>profileDir: PATH</code> (library) to use a
+different profile:</p>
+<pre><code class="language-bash"># Different profile per identity
+node headless.js --profile=./profiles/work    https://work-app.com
+node headless.js --profile=./profiles/personal https://other-app.com
+</code></pre>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+const { page, close } = await launch({
+  profileDir: &#39;./profiles/work&#39;,
+  url: &#39;https://work-app.com&#39;,
+});
+</code></pre>
+<p>Two runs with different <code>profileDir</code>s are completely isolated — they
+share no cookies, no localStorage, no anything. Treat them as
+separate Chrome installs.</p>
+<h2>When to reset a profile</h2>
+<p>You generally <strong>don&#39;t</strong> need to — the profile is self-healing. But
+you may want to reset in these cases:</p>
+<ul>
+<li><strong>Cookies got out of sync</strong> (e.g. you changed your password
+upstream). Delete <code>profile/Default/Cookies</code>.</li>
+<li><strong>A site&#39;s state is corrupted</strong> (e.g. a half-completed onboarding
+flow is making the next run loop). Delete the whole profile dir.</li>
+<li><strong>You want a clean stealth run</strong> for a one-off check. Pass
+<code>--profile=./profiles/clean</code>.</li>
+<li><strong>The profile grew too large</strong> (it&#39;s been months of heavy use).
+Delete it; Chrome will rebuild it on next run.</li>
+</ul>
+<p>To reset fully:</p>
+<pre><code class="language-bash">rm -rf /opt/lampp/htdocs/ServerBrowser/profile/
+</code></pre>
+<h2>Inspecting the profile</h2>
+<p>The profile is a normal Chrome user-data dir, so you can poke at it
+with standard tools:</p>
+<pre><code class="language-bash"># See the cookies
+sqlite3 profile/Default/Cookies &quot;SELECT host_key, name, value FROM cookies LIMIT 10;&quot;
+
+# See the permissions
+cat profile/Default/Preferences | python3 -m json.tool | less
+</code></pre>
+<h2>Why a persistent profile is also good for stealth</h2>
+<p>Anti-bot systems often check the <em>consistency</em> of a profile: does
+this user have a history? Have they visited these sites before?
+Are their cookies consistent with their claimed identity?</p>
+<p>A fresh, empty profile on every run is <strong>its own</strong> tell — real users
+almost never have an empty profile. By keeping the profile
+persistent, you:</p>
+<ul>
+<li>Build up a (small) browsing history over time.</li>
+<li>Accumulate realistic cookies.</li>
+<li>Get realistic cache hits.</li>
+<li>Make the browser look like a real returning visitor, not a
+one-shot automated script.</li>
+</ul>
+<h2>Security notes</h2>
+<p>The profile dir contains cookies — anyone with read access to the
+filesystem can impersonate you on every site you&#39;ve logged into. On
+shared systems:</p>
+<ul>
+<li>Don&#39;t run <code>ServerBrowser/</code> as root for personal accounts (you&#39;re
+currently running as root in this XAMPP setup, which is fine for
+dev but treat the profile as sensitive).</li>
+<li>Set <code>chmod 700</code> on the profile dir.</li>
+<li>Consider encrypting the filesystem if the box is multi-user.</li>
+</ul>
+<h2>What does NOT persist</h2>
+<ul>
+<li><strong>In-memory JavaScript state</strong> — the JS heap is per-process.</li>
+<li><strong>The current page</strong> — the browser always starts at
+<code>about:blank</code> (or whatever URL you pass to <code>launch()</code>).</li>
+<li><strong>The active download list</strong> — downloads are per-session.</li>
+<li><strong>Open DevTools</strong> — but the stealth patches make this moot
+anyway, since there&#39;s nothing suspicious to find.</li>
+<li><strong>Geolocation permission grants</strong> beyond the first run** —
+actually, these do persist. If you <code>grantPermissions</code> something
+in one run, it&#39;s there next time.</li>
+</ul>
+
+</body>
+</html>

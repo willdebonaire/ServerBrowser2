@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Installation</h1>
+<h2>Prerequisites</h2>
+<p>You need three things on the machine where you&#39;ll run <code>ServerBrowser/</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Minimum version</th>
+<th>How to check</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Node.js</td>
+<td>18.x</td>
+<td><code>node --version</code></td>
+</tr>
+<tr>
+<td>Google Chrome</td>
+<td>120+</td>
+<td><code>google-chrome --version</code> (or <code>google-chrome-stable --version</code>)</td>
+</tr>
+<tr>
+<td>Playwright</td>
+<td>1.40+</td>
+<td><code>playwright --version</code></td>
+</tr>
+</tbody></table>
+<p>This project uses Playwright but does <strong>not</strong> depend on the Playwright
+browser bundles (Chromium / Firefox / WebKit). It always launches the
+<strong>system Google Chrome</strong>, so you do not need to run
+<code>playwright install</code>.</p>
+<h2>1. Install Node.js</h2>
+<p>If <code>node --version</code> is older than 18, install a current LTS:</p>
+<pre><code class="language-bash"># Debian / Ubuntu
+curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Or via nvm (any Linux/macOS)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+nvm install --lts
+</code></pre>
+<h2>2. Install Google Chrome</h2>
+<p>The project assumes <code>/usr/bin/google-chrome</code> exists. Install:</p>
+<pre><code class="language-bash"># Debian / Ubuntu
+wget -q -O - https://dl.google.com/linux/linux_signing_key.pub \
+  | sudo apt-key add - \
+  &amp;&amp; echo &quot;deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main&quot; \
+  | sudo tee /etc/apt/sources.list.d/google-chrome.list \
+  &amp;&amp; sudo apt-get update \
+  &amp;&amp; sudo apt-get install -y google-chrome-stable
+
+# macOS
+brew install --cask google-chrome
+
+# Or download the .deb / .dmg directly from
+# https://www.google.com/chrome/
+</code></pre>
+<p>If Chrome lives somewhere other than <code>/usr/bin/google-chrome</code>, pass
+<code>--executablePath=...</code> to <code>launch()</code> (library) or set
+<code>executablePath</code> in the launch options.</p>
+<h2>3. Install Playwright</h2>
+<p>The <code>ServerBrowser/</code> folder already has a <code>node_modules/</code> with <code>playwright</code>
+and <code>chalk</code> (it shares the parent <code>htdocs</code> folder&#39;s <code>node_modules</code>).
+If you need to install fresh:</p>
+<pre><code class="language-bash"># In the parent folder (htdocs):
+cd /opt/lampp/htdocs
+npm install playwright chalk
+
+# Or globally if you don&#39;t want a per-project install:
+npm install -g playwright
+</code></pre>
+<p>The global install is sufficient because <code>require(&#39;playwright&#39;)</code> will
+find the global module if no local one is present.</p>
+<h2>4. Install Firefox and Chromium (optional)</h2>
+<p>The default browser is the <strong>system Google Chrome</strong> (launched via
+<code>--browser=chrome</code>). To use Playwright-managed Firefox or Chromium
+instead — for example if you don&#39;t have system Chrome installed, or
+need an isolated profile without a persistent user-data-dir — install
+them with:</p>
+<pre><code class="language-bash"># Install the Firefox bundle
+npx playwright install firefox
+
+# Install the Chromium bundle
+npx playwright install chromium
+</code></pre>
+<p>Both commands download the browser binaries into <code>~/.cache/ms-playwright/</code>
+(overridable with <code>PLAYWRIGHT_BROWSERS_PATH</code>).</p>
+<h3>When to use each</h3>
+<table>
+<thead>
+<tr>
+<th>Browser</th>
+<th>Use case</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>chrome</code> (default)</td>
+<td>System Google Chrome; best anti-detection (stealth layer tuned for Chrome).</td>
+</tr>
+<tr>
+<td><code>firefox</code></td>
+<td>Isolated profile; different fingerprint; useful for cross-browser tests.</td>
+</tr>
+<tr>
+<td><code>chromium</code></td>
+<td>Playwright-managed Chromium; smallest install; good for CI.</td>
+</tr>
+</tbody></table>
+<p>Select at launch time with:</p>
+<pre><code class="language-bash"># Firefox
+npm run vnc -- --browser=firefox
+
+# Chromium
+npm run vnc -- --browser=chromium
+</code></pre>
+<p>Or via env:</p>
+<pre><code class="language-bash">BROWSER=firefox npm run vnc
+</code></pre>
+<h2>5. Browser constraints</h2>
+<h3>Firefox CDP limitations in Playwright</h3>
+<p>Playwright&#39;s Firefox channel <strong>does not support Chrome DevTools Protocol (CDP)</strong>
+as a first-class target. The <code>--browser=firefox</code> path in <code>vnc-driver.js</code> launches
+Firefox and attaches via Playwright&#39;s own protocol (not CDP). This means:</p>
+<ul>
+<li><strong><code>connectOverCDP</code> is unavailable</strong> for Firefox. Automation that depends on raw
+CDP (stealth plugins, session manipulation) works only with <code>chrome</code> / <code>chromium</code>.</li>
+<li>Firefox&#39;s anti-detection fingerprint differs from Chrome. The stealth layer is
+tuned for Blink/Chrome; running with Firefox may surface <code>navigator.webdriver</code>
+differently or lack Chrome-specific <code>window.chrome</code> properties.</li>
+<li>Session/cookie APIs behave differently in Gecko. Stored scripts that call
+<code>chromium.launch()</code> and rely on Chrome-specific <code>context</code> or <code>page</code> behaviours
+should be tested against the intended target before production use.</li>
+</ul>
+<h3><code>chrome</code> vs <code>chromium</code> vs <code>firefox</code></h3>
+<table>
+<thead>
+<tr>
+<th>Dimension</th>
+<th><code>chrome</code></th>
+<th><code>chromium</code></th>
+<th><code>firefox</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CDP support</td>
+<td>Full (primary target)</td>
+<td>Full</td>
+<td>None (Playwright protocol only)</td>
+</tr>
+<tr>
+<td>Stealth layer</td>
+<td>Full (blink-specific)</td>
+<td>Full (blink-specific)</td>
+<td>Partial (gecko-specific stubs)</td>
+</tr>
+<tr>
+<td><code>window.chrome</code></td>
+<td>Present</td>
+<td>Present</td>
+<td>Absent</td>
+</tr>
+<tr>
+<td><code>navigator.webdriver</code></td>
+<td>Suppressed</td>
+<td>Suppressed</td>
+<td>May differ by version</td>
+</tr>
+<tr>
+<td>Profile persistence</td>
+<td>user-data-dir</td>
+<td>temp dir</td>
+<td>temp dir</td>
+</tr>
+<tr>
+<td>Anti-bot fingerprint</td>
+<td>Chrome 120+</td>
+<td>Current snapshot</td>
+<td>Firefox ESR</td>
+</tr>
+<tr>
+<td>Install</td>
+<td>System Chrome only</td>
+<td><code>npx playwright install chromium</code></td>
+<td><code>npx playwright install firefox</code></td>
+</tr>
+</tbody></table>
+<p><strong>Recommendation:</strong> use <code>chrome</code> (system Google Chrome) for production automation.
+Use <code>chromium</code> for CI where anti-bot fingerprint is less critical.
+Use <code>firefox</code> only for cross-browser validation or when Chrome is unavailable.</p>
+<h2>6. Optional: tunnel provider binaries</h2>
+<p>The tunnel commands run a local password gate (pure Node, always available). To
+publish a public URL you also need one of these:</p>
+<pre><code class="language-bash"># Cloudflare quick tunnels
+curl -fsSL https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/ | sh
+
+# or ngrok
+curl -fsSL https://ngrok.com/install | sh   # needs an account/token
+</code></pre>
+<p>Neither is required for <code>tunnel-*</code> with the <code>custom</code> provider, which is handy
+for testing and for pointing your own reverse proxy at the gate.</p>
+<hr>
+<h2>7. Optional: Xvfb / x11vnc / noVNC (the VNC stack)</h2>
+<p>To watch the browser over VNC you need the display and web-view pieces:</p>
+<pre><code class="language-bash"># Debian / Ubuntu
+sudo apt-get install -y xvfb x11vnc novnc websockify
+
+# Fedora
+sudo dnf install -y xorg-x11-server-Xvfb x11vnc novnc python3-websockify
+</code></pre>
+<p>Verify the whole stack, including the resolution wiring:</p>
+<pre><code class="language-bash">npm run vnc -- --resolution 1280x720        # prints viewer/CDP URLs, stays up
+bash scripts/smoke-test-vnc-resolution.sh 1440 900   # headless check, exits 0
+</code></pre>
+<h2>8. Verify the install</h2>
+<pre><code class="language-bash">cd /opt/lampp/htdocs/ServerBrowser
+node -e &quot;const m = require(&#39;./headless&#39;); console.log(&#39;OK:&#39;, Object.keys(m).join(&#39;, &#39;));&quot;
+</code></pre>
+<p>You should see the exported API keys:</p>
+<p>Expected output (something like):</p>
+<pre><code>OK: launch, makeHumanizer, search, formatResults, ENGINES, ENGINE_ALIASES, DEFAULT_ENGINE, FALLBACK_CHAIN, REAL_UA, DEFAULT_PROFILE
+</code></pre>
+<p>If you see <code>Cannot find module &#39;playwright&#39;</code>, see
+<a href="troubleshooting.md">troubleshooting.md</a>.</p>
+<h2>9. Smoke test</h2>
+<pre><code class="language-bash"># This will open a URL, print its title, and exit.
+node headless.js https://example.com
+</code></pre>
+<p>Expected output:</p>
+<pre><code>Opened: https://example.com/
+Title:  Example Domain
+Profile dir: /opt/lampp/htdocs/ServerBrowser/profile
+</code></pre>
+<p>If you get a &quot;Failed to launch Google Chrome&quot; error, double-check
+that <code>/usr/bin/google-chrome</code> exists and is executable:</p>
+<pre><code class="language-bash">ls -la /usr/bin/google-chrome
+google-chrome --version
+</code></pre>
+
+</body>
+</html>

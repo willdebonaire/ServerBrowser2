@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Troubleshooting</h1>
+<p>Common problems and their fixes.</p>
+<hr>
+<h2>&quot;Failed to launch Google Chrome&quot;</h2>
+<pre><code>Error: Failed to launch Google Chrome. Is it installed at /usr/bin/google-chrome?
+Original error: browserType.launchPersistentContext: ...
+</code></pre>
+<p><strong>Cause:</strong> Either Google Chrome isn&#39;t at <code>/usr/bin/google-chrome</code>, or
+the executable can&#39;t be launched in your environment.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Check that Chrome exists and is executable:<pre><code class="language-bash">ls -la /usr/bin/google-chrome
+google-chrome --version
+</code></pre>
+</li>
+<li>If it&#39;s at a different path, pass it explicitly:<pre><code class="language-bash">node headless.js --executablePath=/path/to/chrome https://example.com
+</code></pre>
+Or in code:<pre><code class="language-js">await launch({ executablePath: &#39;/snap/bin/chromium&#39;, ... });
+</code></pre>
+</li>
+<li>On a headless server (no display), you may need:<pre><code class="language-bash">sudo apt-get install -y xvfb
+# Then run with xvfb-run:
+xvfb-run node headless.js https://example.com
+</code></pre>
+</li>
+<li>As root inside a container, you may also need <code>--no-sandbox</code> (it&#39;s
+already in the default args, but if you&#39;ve customized).</li>
+</ol>
+<hr>
+<h2>&quot;Cannot find module &#39;playwright&#39;&quot;</h2>
+<p><strong>Cause:</strong> The <code>node_modules/</code> folder doesn&#39;t have Playwright.</p>
+<p><strong>Fixes:</strong></p>
+<pre><code class="language-bash"># Option 1: install globally
+npm install -g playwright
+
+# Option 2: install in the project parent
+cd /opt/lampp/htdocs
+npm install playwright
+
+# Option 3: install in this folder
+cd /opt/lampp/htdocs/ServerBrowser
+npm install playwright
+</code></pre>
+<p>If you&#39;ve installed globally and <code>require(&#39;playwright&#39;)</code> still fails,
+your NODE_PATH is wrong:</p>
+<pre><code class="language-bash">NODE_PATH=$(npm root -g) node headless.js https://example.com
+</code></pre>
+<hr>
+<h2>&quot;ECONNREFUSED 127.0.0.1:9222&quot; or &quot;DevTools port not available&quot;</h2>
+<p><strong>Cause:</strong> A previous Chrome process didn&#39;t clean up its DevTools
+port, OR two <code>headless.js</code> instances are racing on the same profile.</p>
+<p><strong>Fix:</strong></p>
+<pre><code class="language-bash"># Find and kill orphaned Chrome processes
+pkill -f &quot;google-chrome.*--remote-debugging&quot;
+
+# Or be more targeted:
+ps aux | grep -i chrome | grep -v grep
+kill &lt;pid&gt;
+</code></pre>
+<p>Don&#39;t run two <code>headless.js</code> instances against the same profile at
+the same time. Use different <code>--profile</code> paths if you need to
+parallelize.</p>
+<hr>
+<h2>Screenshot is &quot;missing&quot; / &quot;blank&quot; / a half-loaded page</h2>
+<p><strong>Cause:</strong> The page didn&#39;t have time to render before the screenshot.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Increase the settle time:<pre><code class="language-bash">node headless.js --shot --screenshot-wait=5000 URL
+</code></pre>
+</li>
+<li>Use a stricter wait condition (the default <code>networkidle</code> is the
+safest):<pre><code class="language-bash">node headless.js --shot --screenshot-wait-until=networkidle URL
+</code></pre>
+</li>
+<li>If the page is a single-page app that never reaches
+<code>networkidle</code>, use <code>domcontentloaded</code> and a long wait:<pre><code class="language-bash">node headless.js --shot --screenshot-wait-until=domcontentloaded \
+  --screenshot-wait=8000 URL
+</code></pre>
+</li>
+</ol>
+<hr>
+<h2>Site still flags me as a bot</h2>
+<p>The stealth layer is best-effort. If a site still flags you:</p>
+<ol>
+<li><strong>Check <code>--check</code> first</strong> — see <a href="stealth.md">stealth.md</a> for what
+to look at.</li>
+<li><strong>Try <code>--headed</code></strong> — solve a CAPTCHA once; the cookies persist.</li>
+<li><strong>Switch profiles</strong> — you may have been rate-limited on this IP
+for this fingerprint combination. A fresh profile starts
+without history.</li>
+<li><strong>Add a residential proxy</strong> — outside the scope of this</li>
+</ol>
+<hr>
+<h2>Cloudflare Turnstile keeps throwing CAPTCHAs (VNC session)</h2>
+<p><strong>Cause:</strong> Cloudflare Turnstile detects automation signals even in headed
+mode. The most common triggers are <code>navigator.webdriver = true</code>,
+rapid navigation patterns, or IP reputation.</p>
+<p><strong>Fixes — read the full guide in <a href="stealth.md">stealth.md</a> § &quot;Cloudflare
+Turnstile / CAPTCHA handling&quot;.</strong> Quick version:</p>
+<ol>
+<li><strong>Verify <code>navigator.webdriver</code> is <code>false</code></strong> — this is the #1 signal.
+The <code>--disable-blink-features=AutomationControlled</code> Chrome flag
+and the <code>addInitScript</code> override in <code>vnc-driver.js</code> should handle it.</li>
+<li><strong>Slow down</strong> — add 2–5 second delays between actions, 10–20 seconds
+between jobs. Cloudflare tracks navigation frequency.</li>
+<li><strong>Implement CAPTCHA detection</strong> — detect &quot;Just a moment...&quot; / &quot;Verify
+you are human&quot; in the page title/text and pause the script for manual
+VNC solve.</li>
+<li><strong>Wait 10–15 minutes</strong> — Cloudflare blocks are partially time-based.</li>
+<li><strong>Clear cookies and restart</strong>: <code>rm -rf ./profile/Default/Cookies*</code></li>
+<li><strong>Fresh profile</strong>: <code>PROFILE=/tmp/fresh-profile npm run vnc</code></li>
+<li><strong>Use a residential proxy</strong> if the IP is flagged. project,
+but no browser-level stealth can fix a blacklisted IP.</li>
+<li><strong>Slow down</strong> — add longer delays between actions. The <code>human.*</code>
+helpers&#39; defaults are reasonable for a single user, but if
+you&#39;re making 50 requests/minute, real users don&#39;t do that.</li>
+</ol>
+<hr>
+<h2>Search returns 0 results</h2>
+<p><strong>Diagnosis:</strong></p>
+<pre><code class="language-bash">node headless.js --search &quot;your query&quot; --search-json | jq &#39;.tried&#39;
+</code></pre>
+<p>You&#39;ll see something like:</p>
+<pre><code class="language-json">[
+  { &quot;engine&quot;: &quot;duckduckgo-html&quot;, &quot;error&quot;: &quot;no results parsed&quot; },
+  { &quot;engine&quot;: &quot;brave&quot;,           &quot;error&quot;: &quot;no results parsed&quot; },
+  { &quot;engine&quot;: &quot;searxng&quot;,         &quot;error&quot;: &quot;page looked blocked&quot; }
+]
+</code></pre>
+<p><strong>Common causes and fixes:</strong></p>
+<ol>
+<li><strong>All engines parsed 0 results</strong> — your query is very unusual or
+non-Latin. Try a simpler query first to confirm the engines are
+reachable, then debug your specific query.</li>
+<li><strong>SearXNG instance is dead</strong> — public SearXNG instances come and
+go. Use <code>--searxng-instance=https://searx.be</code> (or another
+from <a href="https://searx.space">https://searx.space</a>).</li>
+<li><strong>The CAPTCHA loop on DuckDuckGo</strong> — if your IP has been hitting
+DDG aggressively, you may be seeing a captcha (which our
+<code>healthy()</code> check correctly flags as &quot;page looked blocked&quot;).
+Wait a few hours or switch to <code>--search-engine=brave</code>.</li>
+<li><strong>Network restriction</strong> — your firewall or container is
+blocking one or more of the engine hosts. Check with:<pre><code class="language-bash">curl -s -o /dev/null -w &quot;%{http_code}\n&quot; https://html.duckduckgo.com/html/?q=test
+curl -s -o /dev/null -w &quot;%{http_code}\n&quot; https://search.brave.com/search?q=test
+</code></pre>
+</li>
+</ol>
+<hr>
+<h2>Persistent profile is huge (&gt;1 GB)</h2>
+<p><strong>Cause:</strong> Chrome accumulates cache, history, and other state
+indefinitely. Over months of heavy use, the profile can grow.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Just delete the profile and start over. You lose all logged-in
+sessions, but everything rebuilds on next run.<pre><code class="language-bash">rm -rf /opt/lampp/htdocs/ServerBrowser/profile/
+</code></pre>
+</li>
+<li>Use separate profiles per project so each one stays small:<pre><code class="language-bash">node headless.js --profile=./profiles/work URL
+</code></pre>
+</li>
+<li>Use a cron job to clean caches while keeping cookies:<pre><code class="language-bash">find /opt/lampp/htdocs/ServerBrowser/profile/Default/Cache -type f -delete
+find /opt/lampp/htdocs/ServerBrowser/profile/Default/Code\ Cache -type f -delete
+</code></pre>
+(Don&#39;t touch <code>Cookies</code>, <code>Local Storage</code>, <code>IndexedDB</code>, or
+<code>Preferences</code> — those are your session.)</li>
+</ol>
+<hr>
+<h2>&quot;Cannot read property of undefined&quot; inside the stealth script</h2>
+<p><strong>Cause:</strong> One of the stealth patches is failing on a page that
+shapes its globals unusually.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>The patches are wrapped in a top-level <code>try/catch</code> so a failure
+shouldn&#39;t crash anything. If you see this error from <em>outside</em>
+the stealth script, it&#39;s not us.</li>
+<li>To debug, comment out patches one at a time in <code>stealth.js</code> (the
+sections are clearly numbered <code>// ---- N. &lt;signal&gt; ----</code>) and
+see which one is the offender.</li>
+<li>Report the failure to the project with the URL of the offending
+page and the stack trace.</li>
+</ol>
+<hr>
+<h2>Process won&#39;t exit after the script &quot;finishes&quot;</h2>
+<p><strong>Cause:</strong> A timer, a CDP session, or a long-running <code>human.*</code>
+promise is still alive.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Make sure you call <code>close()</code> at the end of your script:<pre><code class="language-js">const { close } = await launch(...);
+// ... do stuff ...
+await close();
+</code></pre>
+</li>
+<li>If you&#39;ve been using <code>--keep-open</code> and exited with Ctrl+C in
+the middle, the Chrome process may be orphaned. Kill it:<pre><code class="language-bash">pkill -f &quot;google-chrome&quot;
+</code></pre>
+</li>
+<li>As a last resort, force exit at the end of your script:<pre><code class="language-js">await close();
+process.exit(0);
+</code></pre>
+</li>
+</ol>
+<hr>
+<h2>Screenshot says &quot;saved 0 bytes&quot;</h2>
+<p><strong>Cause:</strong> Playwright tried to write a screenshot but the page
+crashed or the buffer is empty.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Open the page first and check for console errors:<pre><code class="language-js">const { page, close } = await launch({ url });
+page.on(&#39;pageerror&#39;, e =&gt; console.error(&#39;Page error:&#39;, e));
+await page.waitForTimeout(2000);
+await screenshot(&#39;foo.png&#39;);
+await close();
+</code></pre>
+</li>
+<li>Try a different <code>waitUntil</code>:<pre><code class="language-bash">--screenshot-wait-until=load
+</code></pre>
+</li>
+<li>The page may have a long-running request that never resolves;
+try <code>--screenshot-wait=100</code> (a tiny manual wait) to capture
+whatever is on screen.</li>
+</ol>
+<hr>
+<h2>&quot;permission denied&quot; when launching Chrome</h2>
+<p><strong>Cause:</strong> Running as a non-root user that can&#39;t write to the
+profile dir, or the profile is owned by another user.</p>
+<p><strong>Fixes:</strong></p>
+<pre><code class="language-bash"># Take ownership
+sudo chown -R $(whoami) /opt/lampp/htdocs/ServerBrowser/profile/
+
+# Or pick a profile you can write to
+node headless.js --profile=$HOME/.browser-profile-me URL
+</code></pre>
+<hr>
+<h2>Page says &quot;Please enable JavaScript&quot;</h2>
+<p><strong>Cause:</strong> Either JavaScript is disabled (it isn&#39;t, by default) or
+the site&#39;s bot detection thinks the user-agent is wrong.</p>
+<p><strong>Fixes:</strong></p>
+<ol>
+<li>Check the UA:<pre><code class="language-bash">node headless.js --check https://example.com | grep userAgent
+</code></pre>
+It should be a real Chrome 140 UA. If it&#39;s something like
+<code>HeadlessChrome/140...</code>, your stealth init script isn&#39;t loading.</li>
+<li>Confirm <code>addInitScript</code> is being called (it is, in <code>headless.js</code>
+line ~135) and that the <code>stealth.js</code> module loads without
+throwing.</li>
+</ol>
+<hr>
+<h2>Search engine returns the same captcha page every time</h2>
+<p><strong>Cause:</strong> Your IP is on a captcha list for that engine. The
+fallback chain is supposed to handle this, but if ALL three engines
+captcha you, you need to:</p>
+<ol>
+<li>Wait a few hours and try again.</li>
+<li>Use a different network (mobile hotspot, residential proxy, VPN).</li>
+<li>Use a different machine.</li>
+</ol>
+<p>This is a network-level block; the stealth layer can&#39;t help here.</p>
+<hr>
+<h2>Still stuck?</h2>
+<ol>
+<li>Run with <code>--headed</code> and watch what the browser does.</li>
+<li>Use Chrome DevTools (right-click → Inspect) while the page is
+open to see the JS console.</li>
+<li>Look at <code>PLAYWRIGHT--script.log</code> (in the parent <code>/opt/lampp/htdocs</code>
+folder — your other Playwright scripts write there).</li>
+<li>Check the <code>tried</code> field in a search response — it tells you
+exactly which engines failed and why.</li>
+</ol>
+
+</body>
+</html>

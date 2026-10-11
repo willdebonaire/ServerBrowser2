@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>CLI reference</h1>
+<p>The CLI entry point is <code>headless.js</code>. Run <code>node headless.js --help</code> for
+the in-tool summary, or read the full reference below.</p>
+<pre><code>node headless.js [flags] [URL]                          # open URL
+node headless.js --search &quot;my query&quot;                    # search the web
+node headless.js --search &quot;my query&quot; --search-shot      # search + screenshot
+node headless.js --check https://bot.sannysoft.com      # fingerprint check
+</code></pre>
+<hr>
+<h2>URL modes (mutually exclusive)</h2>
+<p>The CLI has three top-level modes. Whichever flag appears first in
+the command line wins; the others are ignored for the same run.</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Trigger</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Open URL</td>
+<td><code>[URL]</code> on the command line</td>
+<td>Navigates to the URL, prints title.</td>
+</tr>
+<tr>
+<td>Search</td>
+<td><code>--search &quot;QUERY&quot;</code></td>
+<td>Web search via the engine fallback chain.</td>
+</tr>
+<tr>
+<td>Fingerprint</td>
+<td><code>--check URL</code></td>
+<td>Loads URL, runs detection probes, prints JSON.</td>
+</tr>
+</tbody></table>
+<p>Examples:</p>
+<pre><code class="language-bash"># Open
+node headless.js https://example.com
+
+# Search
+node headless.js --search &quot;playwright tutorial&quot;
+
+# Fingerprint check
+node headless.js --check https://bot.sannysoft.com
+</code></pre>
+<hr>
+<h2>Other entry points</h2>
+<p><code>headless.js</code> is the one-shot tool. The live/VNC stack has its own commands —
+see <a href="LIVE-DRIVE.md">LIVE-DRIVE.md</a> for the full reference.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>npm run vnc [-- --resolution WxH] [-- --browser chrome|chromium|firefox] [-- --local-chrome]</code></td>
+<td>Bring up Xvfb + headed Chrome + x11vnc + noVNC and stay in the foreground</td>
+</tr>
+<tr>
+<td><code>npm run live -- &lt;command&gt; [args]</code></td>
+<td>One live command against the running Chrome (JSON out). <code>--stdin</code> for JSON-lines; <code>--agent-id &lt;id&gt;</code> to scope to one agent tab</td>
+</tr>
+<tr>
+<td><code>npm run connect -- &lt;command&gt;</code></td>
+<td>Same idea against a <strong>remote</strong> CDP endpoint (<code>CDP_URL=…</code>)</td>
+</tr>
+<tr>
+<td><code>npm run local-chrome</code></td>
+<td>Start a normal Chrome with a DevTools port, for <code>vnc -- --local-chrome</code></td>
+</tr>
+<tr>
+<td><code>npm run standalone -- &lt;group&gt; &lt;subcommand&gt;</code></td>
+<td>Scriptable CLI: <code>browser</code>, <code>tunnel</code>, <code>ai</code>, <code>api-keys</code></td>
+</tr>
+<tr>
+<td><code>npm run tunnel -- tunnel-&lt;command&gt;</code></td>
+<td>Named tunnels with password-protected ingress</td>
+</tr>
+<tr>
+<td><code>npm run drive-doc</code></td>
+<td>Print LIVE-DRIVE.md</td>
+</tr>
+</tbody></table>
+<pre><code class="language-bash">npm run vnc -- --resolution 1920x1080     # 1080p desktop, viewport matches
+npm run live -- dump                      # JSON description of the active tab
+npm run live -- extract-links checkout    # scrape
+npm run live -- db-select leads           # DuckDB, no browser needed
+npm run standalone -- ai chat echo &quot;hi&quot;   # offline AI round trip
+</code></pre>
+<hr>
+<h2>Global flags</h2>
+<p>These work in every mode.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--help</code>, <code>-h</code></td>
+<td></td>
+<td>Print help and exit.</td>
+</tr>
+<tr>
+<td><code>--headed</code>, <code>--no-headless</code></td>
+<td></td>
+<td>Open a real Chrome window instead of running headless. Useful for debugging detection or for solving a CAPTCHA manually.</td>
+</tr>
+<tr>
+<td><code>--headless</code></td>
+<td><code>true</code></td>
+<td>Force headless mode (this is the default already).</td>
+</tr>
+<tr>
+<td><code>--profile=PATH</code></td>
+<td><code>./profile/</code></td>
+<td>Persistent Chrome user-data directory. Cookies, sessions, localStorage, etc. are saved here.</td>
+</tr>
+<tr>
+<td><code>--viewport=WxH</code></td>
+<td><code>1920x1080</code></td>
+<td>Viewport size in CSS pixels.</td>
+</tr>
+<tr>
+<td><code>--resolution=WxH</code></td>
+<td><code>1280x800</code></td>
+<td>VNC display resolution (Xvfb screen size). Also sets viewport. Accepts the shorthand <code>WIDTHxHEIGHT</code> form.</td>
+</tr>
+<tr>
+<td><code>--keep-open</code></td>
+<td><code>false</code></td>
+<td>After the URL finishes loading, don&#39;t auto-close. Useful for <code>--headed</code> debugging.</td>
+</tr>
+<tr>
+<td><code>--executablePath=PATH</code></td>
+<td><code>/usr/bin/google-chrome</code></td>
+<td>Override the Chrome binary location.</td>
+</tr>
+</tbody></table>
+<p>Examples:</p>
+<pre><code class="language-bash"># Use a separate profile for &quot;work&quot; identity
+node headless.js --profile=./profiles/work https://work-app.com
+
+# Open in a smaller viewport
+node headless.js --viewport=1280x800 https://example.com
+
+# Set VNC display resolution
+node headless.js --resolution=1920x1080 https://example.com
+
+# Headed mode for debugging
+node headless.js --headed https://example.com
+
+# Force headless explicitly
+node headless.js --headless https://example.com
+</code></pre>
+<hr>
+<h2>Screenshot flags</h2>
+<p>See <a href="screenshots.md">screenshots.md</a> for the conceptual overview.
+Here are the flags.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--shot</code>, <code>--screenshot</code></td>
+<td><code>false</code></td>
+<td>Take a screenshot of the loaded page.</td>
+</tr>
+<tr>
+<td><code>--shot=PATH</code>, <code>--screenshot=PATH</code></td>
+<td><code>./screenshots/screenshot-&lt;ts&gt;.png</code></td>
+<td>Save to this path. Format is inferred from extension (<code>.png</code>/<code>.jpg</code>).</td>
+</tr>
+<tr>
+<td><code>--full-page</code>, <code>--fullpage</code></td>
+<td><code>false</code></td>
+<td>Capture the entire scrollable page, not just the viewport.</td>
+</tr>
+<tr>
+<td><code>--screenshot-format=png|jpeg</code></td>
+<td><code>png</code></td>
+<td>Image format.</td>
+</tr>
+<tr>
+<td><code>--screenshot-quality=N</code></td>
+<td><code>80</code></td>
+<td>JPEG quality 0-100 (ignored for PNG).</td>
+</tr>
+<tr>
+<td><code>--screenshot-wait=MS</code></td>
+<td><code>1500</code></td>
+<td>Extra ms to wait AFTER the page settles, before snapping. Use to give lazy content time to render.</td>
+</tr>
+<tr>
+<td><code>--screenshot-wait-until=load|domcontentloaded|networkidle</code></td>
+<td><code>networkidle</code></td>
+<td>Wait condition before the extra <code>screenshot-wait</code>.</td>
+</tr>
+</tbody></table>
+<p>Examples:</p>
+<pre><code class="language-bash"># Auto-named under ./screenshots/
+node headless.js --shot https://example.com
+
+# Explicit path
+node headless.js --shot=foo.png https://example.com
+
+# Full scrollable page
+node headless.js --shot --full-page https://example.com
+
+# JPEG with quality
+node headless.js --shot=pic.jpg --screenshot-format=jpeg --screenshot-quality=70 https://example.com
+
+# Wait 3 seconds for lazy content
+node headless.js --shot --screenshot-wait=3000 https://example.com
+</code></pre>
+<hr>
+<h2>Search flags</h2>
+<p>See <a href="search.md">search.md</a> for the conceptual overview. Here are the flags.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--search &quot;QUERY&quot;</code></td>
+<td></td>
+<td>Search query. Accepts the next arg if it doesn&#39;t look like a flag.</td>
+</tr>
+<tr>
+<td><code>--search=QUERY</code>, <code>--search-query=QUERY</code></td>
+<td></td>
+<td>Same, with <code>=</code> syntax.</td>
+</tr>
+<tr>
+<td><code>--search-engine=ENGINE</code></td>
+<td><code>duckduckgo-html</code></td>
+<td><code>duckduckgo-html</code> | <code>brave</code> | <code>searxng</code>. Aliases: <code>ddg</code>.</td>
+</tr>
+<tr>
+<td><code>--search-engine ENGINE</code></td>
+<td></td>
+<td>Space-separated form of the above.</td>
+</tr>
+<tr>
+<td><code>--search-limit=N</code></td>
+<td><code>10</code></td>
+<td>Max results to return.</td>
+</tr>
+<tr>
+<td><code>--search-limit N</code></td>
+<td></td>
+<td>Space-separated form.</td>
+</tr>
+<tr>
+<td><code>--search-json</code></td>
+<td><code>false</code></td>
+<td>Output raw JSON instead of formatted text. Useful for piping to <code>jq</code>.</td>
+</tr>
+<tr>
+<td><code>--search-shot</code>, <code>--search-screenshot</code></td>
+<td><code>false</code></td>
+<td>Also save a screenshot of the results page. Filename: <code>search-&lt;engine&gt;.png</code>.</td>
+</tr>
+<tr>
+<td><code>--searxng-instance=URL</code></td>
+<td><code>https://paulgo.io</code></td>
+<td>Custom SearXNG instance URL (only used if engine is <code>searxng</code>).</td>
+</tr>
+</tbody></table>
+<p>Examples:</p>
+<pre><code class="language-bash"># Default (DuckDuckGo HTML, 10 results, pretty-printed)
+node headless.js --search &quot;playwright tutorial&quot;
+
+# Limit to 5 results
+node headless.js --search &quot;playwright tutorial&quot; --search-limit 5
+
+# Use Brave explicitly
+node headless.js --search &quot;rust async&quot; --search-engine=brave
+
+# Use a custom SearXNG instance
+node headless.js --search &quot;privacy news&quot; \
+                 --search-engine=searxng \
+                 --searxng-instance=https://searx.be
+
+# JSON for piping
+node headless.js --search &quot;node streams&quot; --search-json | jq &#39;.results[].url&#39;
+
+# Search + screenshot
+node headless.js --search &quot;hello world&quot; --search-shot
+</code></pre>
+<hr>
+<h2>Fingerprint-check flags</h2>
+<p>The <code>--check URL</code> mode loads a page and runs a battery of
+fingerprint probes. There are no extra flags; the URL is the page
+to probe (a known detection site like <code>https://bot.sannysoft.com</code> or
+<code>https://browserleaks.com</code>).</p>
+<pre><code class="language-bash">node headless.js --check https://bot.sannysoft.com
+</code></pre>
+<p>Output is a single JSON object. See <a href="stealth.md">stealth.md</a> for what
+each field means and what the &quot;passing&quot; values look like.</p>
+<hr>
+<h2>Putting it all together</h2>
+<pre><code class="language-bash"># Realistic scenarios:
+
+# 1. Log in, screenshot the result, search for something
+node headless.js --profile=./profiles/me --shot=home.png \
+  --search &quot;weather today&quot; --search-engine=duckduckgo-html \
+  https://my-app.com
+
+# 2. Stealth run with custom viewport and JPEG screenshot
+node headless.js --viewport=1280x800 \
+  --shot=full.jpg --screenshot-format=jpeg --screenshot-quality=60 \
+  --full-page https://example.com
+
+# 3. Run a search via SearXNG, output JSON
+node headless.js --search &quot;node streams&quot; \
+  --search-engine=searxng --searxng-instance=https://searx.be \
+  --search-json | jq &#39;.results[] | {title, url}&#39;
+</code></pre>
+<p>See the per-feature pages (<a href="screenshots.md">screenshots.md</a>,
+<a href="search.md">search.md</a>, <a href="stealth.md">stealth.md</a>,
+<a href="persistence.md">persistence.md</a>) for the conceptual details behind
+each flag.</p>
+
+</body>
+</html>

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Stealth layer</h1>
+<p>The &quot;stealth&quot; patches hide the fact that the browser is automated.
+This page explains what each patch does, why, and what it does NOT
+do.</p>
+<h2>What the bot-detection industry looks at</h2>
+<p>Anti-bot services (FingerprintJS, Cloudflare, DataDome, PerimeterX,
+Kasada, CreepJS, ...) use a mix of techniques. The most common
+<strong>technical</strong> tells for a vanilla headless Chromium are:</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>What they do with it</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>navigator.webdriver === true</code></td>
+<td>Trivially flags the page as automated.</td>
+</tr>
+<tr>
+<td><code>cdc_adoQpoasnfa76pfcZLmcfl_</code> global</td>
+<td>Injected by Playwright/CDP into every page.</td>
+</tr>
+<tr>
+<td><code>__webdriver_evaluate</code> / <code>__webdriver_scriptFunction</code> etc. on Navigator/Document</td>
+<td>Same — Playwright injection artifact.</td>
+</tr>
+<tr>
+<td>Missing <code>window.chrome</code></td>
+<td>Headless Chromium doesn&#39;t expose it; real Chrome always does.</td>
+</tr>
+<tr>
+<td><code>navigator.plugins.length === 0</code></td>
+<td>Headless reports 0 plugins. Real Chrome has at least 5.</td>
+</tr>
+<tr>
+<td><code>navigator.mimeTypes.length === 0</code></td>
+<td>Same idea.</td>
+</tr>
+<tr>
+<td><code>WebGL UNMASKED_VENDOR_WEBGL === &quot;Google Inc.&quot;</code> and <code>UNMASKED_RENDERER_WEBGL === &quot;SwiftShader&quot;</code></td>
+<td>Headless falls back to the SwiftShader software renderer.</td>
+</tr>
+<tr>
+<td><code>Permissions.query({name:&#39;notifications&#39;})</code> returning a non-<code>prompt</code> value when no decision has been made</td>
+<td>Indicates headless.</td>
+</tr>
+<tr>
+<td><code>navigator.languages</code> empty or not matching the locale</td>
+<td>Indicates a default browser install.</td>
+</tr>
+<tr>
+<td><code>User-Agent</code> contains <code>HeadlessChrome</code></td>
+<td>Direct flag.</td>
+</tr>
+<tr>
+<td>Visible &quot;Chrome is being controlled by automated test software&quot; infobar</td>
+<td>Direct flag.</td>
+</tr>
+</tbody></table>
+<p>The <code>ServerBrowser/</code> stealth layer (in <code>stealth.js</code>, injected via
+<code>addInitScript</code> so it runs <strong>before</strong> any page script) patches every
+one of these. The full mapping is:</p>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Patch</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>navigator.webdriver</code></td>
+<td><code>Object.defineProperty</code> on <code>Navigator.prototype</code> to return <code>undefined</code>.</td>
+</tr>
+<tr>
+<td><code>cdc_*</code> / <code>__webdriver_*</code> / <code>__phantom*</code> / <code>__nightmare*</code> / <code>__driver_*</code> / <code>__selenium_*</code> globals</td>
+<td><code>delete</code> from <code>window</code>, <code>document</code>, <code>Navigator.prototype</code>, <code>Document.prototype</code>.</td>
+</tr>
+<tr>
+<td>Missing <code>window.chrome</code></td>
+<td>Stub <code>window.chrome.app</code>, <code>chrome.csi()</code>, <code>chrome.loadTimes()</code>, <code>chrome.runtime</code>.</td>
+</tr>
+<tr>
+<td>0 <code>navigator.plugins</code> / <code>mimeTypes</code></td>
+<td>Replace with a 6-plugin PluginArray (PDF, Native Client, etc.) and a 4-mimeType MimeTypeArray, with <code>item()</code>/<code>namedItem()</code>/<code>refresh()</code> methods.</td>
+</tr>
+<tr>
+<td><code>WebGL vendor/renderer = SwiftShader</code></td>
+<td>Patch <code>WebGLRenderingContext.getParameter</code> to return <code>Intel Inc.</code> and <code>Intel Iris OpenGL Engine</code> for the unmasked vendor/renderer params. Also expose the <code>WEBGL_debug_renderer_info</code> extension.</td>
+</tr>
+<tr>
+<td><code>Permissions.query</code> for notifications</td>
+<td>Forward <code>Notification.permission</code> directly instead of the default.</td>
+</tr>
+<tr>
+<td><code>navigator.languages</code> mismatch</td>
+<td>Override to <code>[&#39;en-US&#39;, &#39;en&#39;]</code> to match the default locale.</td>
+</tr>
+<tr>
+<td>UA contains &quot;Headless&quot;</td>
+<td>Rewrite via <code>Navigator.prototype</code> getter (belt and suspenders; primary fix is the <code>userAgent</code> launch option).</td>
+</tr>
+<tr>
+<td>Chrome infobar</td>
+<td><code>ignoreDefaultArgs: [&#39;--enable-automation&#39;]</code> + <code>disable-blink-features=AutomationControlled</code> + <code>--no-first-run</code> + <code>--no-default-browser-check</code>.</td>
+</tr>
+<tr>
+<td>Old headless mode</td>
+<td>Uses the new headless implementation (Playwright &gt;= 1.40 default, which is dramatically less bot-like).</td>
+</tr>
+<tr>
+<td>Bundled Chromium not Chrome</td>
+<td><code>channel: &#39;chrome&#39;</code> + <code>executablePath: &#39;/usr/bin/google-chrome&#39;</code>.</td>
+</tr>
+<tr>
+<td><code>navigator.connection</code> missing</td>
+<td>Stub with <code>{ effectiveType: &#39;4g&#39;, rtt: 50, downlink: 10, saveData: false }</code>.</td>
+</tr>
+</tbody></table>
+<p>The result: a fresh <code>https://bot.sannysoft.com</code> run reports all
+checks <strong>passing</strong>.</p>
+<h2>Testing your own stealth</h2>
+<h3>1. The built-in <code>--check</code> mode</h3>
+<pre><code class="language-bash">node headless.js --check https://bot.sannysoft.com
+</code></pre>
+<p>Output is a JSON fingerprint. Look for:</p>
+<ul>
+<li><code>webdriver</code> is <strong>missing</strong> (= <code>undefined</code>) — the number-one
+giveaway is gone.</li>
+<li><code>userAgent</code> does NOT contain <code>Headless</code>.</li>
+<li><code>plugins</code> is <code>6</code>, <code>mimeTypes</code> is <code>4</code> (not 0).</li>
+<li><code>hasChrome</code>, <code>hasChromeRuntime</code>, <code>hasChromeCSI</code>, <code>hasChromeLoadTimes</code> are all <code>true</code>.</li>
+<li><code>webglVendor</code> is <code>Intel Inc.</code>, not <code>Google Inc.</code></li>
+<li><code>webglRenderer</code> is <code>Intel Iris OpenGL Engine</code>, not <code>SwiftShader</code>.</li>
+</ul>
+<h3>2. Other public detection sites</h3>
+<p>These are all reachable through the stealth browser and will report
+clean:</p>
+<ul>
+<li><code>https://bot.sannysoft.com</code> — the gold-standard basic test.</li>
+<li><code>https://intoli.com/blog/not-possible-to-block-chrome-headless/chrome-headless-test.html</code> — Intoli&#39;s test.</li>
+<li><code>https://browserleaks.com</code> — IP / canvas / WebGL leaks.</li>
+<li><code>https://fingerprintjs.github.io/fingerprintjs/</code> — FingerprintJS demo.</li>
+</ul>
+<p>For the very-hardest suites (e.g. <code>https://abrahamjuliot.github.io/creepjs/</code>),
+even the stealth layer is not enough — those use canvas/font
+fingerprinting that no open-source patch can reliably defeat.</p>
+<h3>3. The library form</h3>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+const { page, close } = await launch({ url: &#39;https://bot.sannysoft.com&#39; });
+const report = await page.evaluate(() =&gt; ({
+  webdriver:        navigator.webdriver,
+  hasWebDriverCdc:  typeof window.cdc_adoQpoasnfa76pfcZLmcfl_ !== &#39;undefined&#39;,
+  hasChrome:        !!window.chrome,
+  pluginsLength:    navigator.plugins.length,
+}));
+console.log(report);
+await close();
+</code></pre>
+<p>Expected output:</p>
+<pre><code class="language-js">{
+  webdriver: undefined,         // ← properly hidden
+  hasWebDriverCdc: false,       // ← no Playwright injection marker
+  hasChrome: true,
+  pluginsLength: 6,
+}
+</code></pre>
+<h2>What the stealth layer does NOT do</h2>
+<p>Be aware of the limits:</p>
+<ol>
+<li><strong>No canvas/font/audio fingerprint randomization.</strong> The pixel-level
+noise in canvas rendering is slightly different per browser
+configuration. Sophisticated fingerprinters (CreepJS, FPStalker)
+can still distinguish you from a &quot;real&quot; user if you visit the
+same site many times — the noise is stable, just unique.</li>
+<li><strong>No proxy integration.</strong> If the IP you come from is on a spam
+list, no amount of browser-level stealth helps. Configure a
+residential proxy outside of this project.</li>
+<li><strong>No behavioral defense.</strong> If you make 100 requests in 5 seconds,
+you&#39;ll get rate-limited. The <code>human.*</code> helpers add per-action
+delays, but for high-volume use you need to add your own
+backoff.</li>
+<li><strong>Not 100% against the hardest suites.</strong> The very best
+fingerprinting tools combine IP, canvas, audio, font,
+<code>navigator.*</code>, and CDP-level signals. The stealth layer makes you
+<strong>inconclusive</strong> rather than definitively real — most sites will
+let you through, but the most paranoid ones may still flag you.</li>
+<li><strong>No CAPTCHA solving.</strong> If a site shows a CAPTCHA, the script
+cannot solve it. Use <code>--headed</code> to solve it manually; the
+successful login persists in the profile.</li>
+<li><strong>No ToS enforcement.</strong> This is a technical tool. Don&#39;t use it
+to violate a site&#39;s terms of service.</li>
+</ol>
+<h2>Cloudflare Turnstile / CAPTCHA handling (VNC headed session)</h2>
+<p>When driving the <strong>live VNC Chrome</strong> (<code>npm run vnc</code>), the stealth layer in
+<code>stealth.js</code> is <strong>not automatically applied</strong> — <code>stealth.js</code> is only used
+by <code>headless.js</code>. The VNC Chrome is launched by <code>scripts/vnc-driver.js</code>,
+which has its own anti-detection setup. Here is the full technique for
+keeping Cloudflare happy in a headed VNC session.</p>
+<h3>The problem — what Cloudflare Turnstile checks</h3>
+<table>
+<thead>
+<tr>
+<th>Signal</th>
+<th>Why it matters</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>navigator.webdriver === true</code></td>
+<td>The <strong>#1</strong> giveaway. Chrome sets this when launched via CDP/Playwright.</td>
+</tr>
+<tr>
+<td><code>window.cdc_*</code> / <code>__webdriver_*</code> globals</td>
+<td>Injection artifacts from Playwright/CDP.</td>
+</tr>
+<tr>
+<td>Rapid page navigation</td>
+<td>5+ URLs in &lt; 30 seconds looks like a scraper, not a human.</td>
+</tr>
+<tr>
+<td>Missing human interaction delays</td>
+<td>Humans take 2–5 seconds between clicks; bots take milliseconds.</td>
+</tr>
+<tr>
+<td>IP reputation</td>
+<td>Repeated automated requests from one IP degrade its reputation.</td>
+</tr>
+</tbody></table>
+<h3>The fix — three layers of defense</h3>
+<p><strong>Layer 1: Chrome launch flags</strong> (<code>scripts/vnc-driver.js</code>):</p>
+<pre><code class="language-js">args: [
+  &#39;--disable-blink-features=AutomationControlled&#39;,  // removes navigator.webdriver
+  &#39;--disable-infobars&#39;,                              // removes &quot;controlled by automation&quot; banner
+  &#39;--no-default-browser-check&#39;,                      // avoids first-run prompts
+]
+</code></pre>
+<p>The critical flag is <strong><code>--disable-blink-features=AutomationControlled</code></strong>.
+Without it, Chrome sets <code>navigator.webdriver = true</code> when launched via CDP.</p>
+<p><strong>Layer 2: <code>addInitScript</code> stealth injection</strong> (runs before any page script):</p>
+<pre><code class="language-js">// In scripts/vnc-driver.js:
+await context.addInitScript(() =&gt; {
+  Object.defineProperty(navigator, &#39;webdriver&#39;, { get: () =&gt; false });
+  Object.defineProperty(Navigator.prototype, &#39;plugins&#39;, { get: () =&gt; [1,2,3,4,5] });
+  Object.defineProperty(Navigator.prototype, &#39;languages&#39;, { get: () =&gt; [&#39;en-US&#39;,&#39;en&#39;] });
+});
+</code></pre>
+<p><strong>Layer 3: Human-like pacing in automation scripts</strong>:</p>
+<pre><code class="language-js">const humanDelay = () =&gt; sleep(2000 + Math.random() * 3000);   // 2-5 seconds
+const jobDelay   = () =&gt; sleep(10000 + Math.random() * 10000); // 10-20 seconds
+
+// After every page.goto() and before every form submission:
+await humanDelay();
+// Between distinct operations (e.g. posting different jobs):
+await jobDelay();
+</code></pre>
+<h3>CAPTCHA detection &amp; pause-for-manual-solve</h3>
+<p>Even with all the above, Cloudflare may still throw a CAPTCHA. The
+recommended pattern is to <strong>detect</strong> it and <strong>pause</strong> for manual
+resolution via VNC:</p>
+<pre><code class="language-js">async function waitForCaptcha(page, timeoutSec = 120) {
+  const start = Date.now();
+  while (Date.now() - start &lt; timeoutSec * 1000) {
+    const title = await page.title();
+    const text = await page.evaluate(() =&gt; document.body?.innerText || &#39;&#39;);
+    if (title.includes(&#39;moment&#39;) || title.includes(&#39;Verification&#39;) ||
+        text.includes(&#39;Verify you are human&#39;)) {
+      console.log(&#39;CAPTCHA detected! Solve via VNC viewer.&#39;);
+      await sleep(5000);
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+</code></pre>
+<p>Call this after every <code>page.goto()</code>. While waiting, open the VNC viewer
+and click the Cloudflare checkbox by hand. The script detects the page
+change and resumes automatically.</p>
+<h3>When Cloudflare blocks you anyway</h3>
+<ol>
+<li><strong>Wait 10–15 minutes</strong> — the block is partially time-based.</li>
+<li><strong>Clear cookies</strong>: <code>rm -rf ./profile/Default/Cookies*</code> then restart VNC.</li>
+<li><strong>Fresh profile</strong>: <code>PROFILE=/tmp/fresh-profile npm run vnc</code></li>
+<li><strong>Residential proxy</strong> — if the IP is flagged, no browser-level stealth helps.</li>
+<li><strong>Reduce frequency</strong> — post 5 jobs, wait 30 minutes, post 5 more.</li>
+</ol>
+<hr>
+<h2>Tuning the stealth layer</h2>
+<p>The patches live in <code>stealth.js</code>. Each one is in a small section
+labeled <code>// ---- N. &lt;signal&gt; ----</code>. To disable a patch (for testing),
+wrap it in <code>if (false) { ... }</code> and re-run. To add a new patch, add
+it to the same file and it will be picked up automatically (no
+re-import needed — it&#39;s loaded once on launch).</p>
+<p>If you upgrade Chrome, update the <code>CHROME_VERSION</code> constant at the
+top of <code>headless.js</code> so the synthetic User-Agent matches the real
+one. Otherwise some sites will see a Chrome-140 UA on a Chrome-150
+binary and flag the mismatch.</p>
+
+</body>
+</html>

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Library API</h1>
+<p>Every feature is exposed as a JavaScript function. The CLI is just a
+thin wrapper over these.</p>
+<pre><code class="language-js">const {
+  launch,           // async function: opens a stealth headless Chrome
+  makeHumanizer,    // (advanced) build a humanizer for an arbitrary page
+  search,           // async function: one-shot web search
+  screenshot,       // (returned by launch; not exported standalone)
+  formatResults,    // (re-exported from search.js) pretty-print results
+  ENGINES,          // registry of search engines
+  ENGINE_ALIASES,   // [&#39;duckduckgo-html&#39;, &#39;ddg&#39;, &#39;brave&#39;, &#39;searxng&#39;]
+  DEFAULT_ENGINE,   // &#39;duckduckgo-html&#39;
+  FALLBACK_CHAIN,   // [&#39;duckduckgo-html&#39;, &#39;brave&#39;, &#39;searxng&#39;]
+  REAL_UA,          // the User-Agent the browser presents
+  DEFAULT_PROFILE,  // default profile dir (./profile)
+} = require(&#39;./headless&#39;);
+</code></pre>
+<hr>
+<h2><code>launch(opts)</code> → <code>Promise&lt;LaunchResult&gt;</code></h2>
+<p>Launch a persistent stealth context. The returned object gives you
+the page, the context, helpers, and a <code>close()</code> function.</p>
+<h3>Signature</h3>
+<pre><code class="language-js">const result = await launch({
+  url:                  &#39;https://example.com&#39;,   // optional: auto-navigate
+  profileDir:           &#39;./profile&#39;,             // optional, default
+  headless:             true,                    // default
+  noHeadless:           false,                   // mutually exclusive
+  keepOpen:             false,                   // don&#39;t auto-close
+  viewport:             { width: 1920, height: 1080 },
+  locale:               &#39;en-US&#39;,
+  timezoneId:           &#39;America/New_York&#39;,
+  geolocation:          { latitude: 40.7, longitude: -74.0 },
+  userAgent:            REAL_UA,                 // override
+  executablePath:       &#39;/usr/bin/google-chrome&#39;,
+
+  // Auto-screenshot (taken once, after the URL settles):
+  screenshot:           false,
+  screenshotPath:       &#39;./screenshots/foo.png&#39;,  // optional
+  screenshotFullPage:   false,
+  screenshotFormat:     &#39;png&#39;,                    // &#39;png&#39; | &#39;jpeg&#39;
+  screenshotQuality:    80,                       // jpeg only
+  screenshotWaitUntil:  &#39;networkidle&#39;,
+  screenshotWait:       1500,
+});
+
+result = {
+  context,                 // the BrowserContext (= the persistent profile)
+  page,                    // the default Page
+  browser,                 // same as context (alias)
+  human,                   // { wait, pause, think, hover, click, type }
+  close,                   // () =&gt; Promise&lt;void&gt;: shut down the browser
+  screenshot,              // (filePath?, opts?) =&gt; Promise&lt;string&gt;: capture
+  lastScreenshotPath,      // getter: most recent file written
+};
+</code></pre>
+<h3>Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>url</code></td>
+<td><code>string</code></td>
+<td>—</td>
+<td>If set, the page auto-navigates to this URL on launch.</td>
+</tr>
+<tr>
+<td><code>profileDir</code></td>
+<td><code>string</code></td>
+<td><code>./profile/</code></td>
+<td>Path to the persistent Chrome user-data dir. Created if missing.</td>
+</tr>
+<tr>
+<td><code>headless</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td><code>false</code> opens a real Chrome window. Mutually exclusive with <code>noHeadless</code>.</td>
+</tr>
+<tr>
+<td><code>noHeadless</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Convenience alias for <code>headless: false</code>.</td>
+</tr>
+<tr>
+<td><code>keepOpen</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>If <code>true</code>, <code>launch()</code> resolves with the browser still running. You must call <code>close()</code> yourself.</td>
+</tr>
+<tr>
+<td><code>viewport</code></td>
+<td><code>{width, height}</code></td>
+<td><code>{1920, 1080}</code></td>
+<td>CSS pixel viewport.</td>
+</tr>
+<tr>
+<td><code>locale</code></td>
+<td><code>string</code></td>
+<td><code>&#39;en-US&#39;</code></td>
+<td>Locale for <code>Accept-Language</code>, <code>navigator.language</code>, etc.</td>
+</tr>
+<tr>
+<td><code>timezoneId</code></td>
+<td><code>string</code></td>
+<td><code>&#39;America/New_York&#39;</code></td>
+<td>IANA timezone id (e.g. <code>&#39;Europe/London&#39;</code>).</td>
+</tr>
+<tr>
+<td><code>geolocation</code></td>
+<td><code>{latitude, longitude}</code></td>
+<td>—</td>
+<td>If set, the browser reports this position. Also grant <code>geolocation</code> permission.</td>
+</tr>
+<tr>
+<td><code>userAgent</code></td>
+<td><code>string</code></td>
+<td><code>REAL_UA</code></td>
+<td>Override the User-Agent. Default is a real Chrome 140 UA matching the installed version.</td>
+</tr>
+<tr>
+<td><code>executablePath</code></td>
+<td><code>string</code></td>
+<td><code>/usr/bin/google-chrome</code></td>
+<td>Override the Chrome binary path.</td>
+</tr>
+</tbody></table>
+<h4>Screenshot options (auto-screenshot on launch)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>screenshot</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Take a screenshot of the initial URL once it settles.</td>
+</tr>
+<tr>
+<td><code>screenshotPath</code></td>
+<td><code>string</code></td>
+<td>auto-named</td>
+<td>Absolute or relative output path. Format inferred from extension.</td>
+</tr>
+<tr>
+<td><code>screenshotFullPage</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Full scrollable page, not just viewport.</td>
+</tr>
+<tr>
+<td><code>screenshotFormat</code></td>
+<td><code>&#39;png&#39; | &#39;jpeg&#39;</code></td>
+<td><code>&#39;png&#39;</code></td>
+<td>Image format.</td>
+</tr>
+<tr>
+<td><code>screenshotQuality</code></td>
+<td><code>number</code></td>
+<td><code>80</code></td>
+<td>JPEG quality 0-100 (ignored for PNG).</td>
+</tr>
+<tr>
+<td><code>screenshotWaitUntil</code></td>
+<td><code>string</code></td>
+<td><code>&#39;networkidle&#39;</code></td>
+<td>Wait condition before capture: <code>load</code>, <code>domcontentloaded</code>, <code>networkidle</code>.</td>
+</tr>
+<tr>
+<td><code>screenshotWait</code></td>
+<td><code>number</code></td>
+<td><code>1500</code></td>
+<td>Extra ms to wait AFTER the wait condition resolves. Use to let lazy content settle.</td>
+</tr>
+</tbody></table>
+<h3>Return value</h3>
+<pre><code class="language-ts">type LaunchResult = {
+  context: import(&#39;playwright&#39;).BrowserContext;
+  page:    import(&#39;playwright&#39;).Page;
+  browser: import(&#39;playwright&#39;).BrowserContext;  // alias
+  human:   {
+    wait:  (ms?: number) =&gt; Promise&lt;void&gt;;
+    pause: () =&gt; Promise&lt;void&gt;;
+    think: () =&gt; Promise&lt;void&gt;;
+    hover: (selector: string) =&gt; Promise&lt;void&gt;;
+    click: (selector: string, opts?: object) =&gt; Promise&lt;void&gt;;
+    type:  (selector: string, text: string) =&gt; Promise&lt;void&gt;;
+  };
+  close:                  () =&gt; Promise&lt;void&gt;;
+  screenshot:             (target?: string | object, overrides?: object) =&gt; Promise&lt;string&gt;;
+  lastScreenshotPath:     string | null;  // live getter
+};
+</code></pre>
+<h3>Example</h3>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+
+const { page, human, screenshot, close } = await launch({
+  url: &#39;https://example.com/login&#39;,
+  profileDir: &#39;./profiles/me&#39;,
+  viewport: { width: 1280, height: 800 },
+  timezoneId: &#39;Europe/London&#39;,
+  geolocation: { latitude: 51.5, longitude: -0.12 },
+});
+
+await human.type(&#39;input[name=email]&#39;,    &#39;me@example.com&#39;);
+await human.think();
+await human.type(&#39;input[name=password]&#39;, &#39;hunter2&#39;);
+await human.pause();
+await human.click(&#39;button[type=submit]&#39;);
+await page.waitForLoadState(&#39;networkidle&#39;);
+
+const out = await screenshot(&#39;logged-in.png&#39;, { fullPage: true });
+console.log(&#39;Saved screenshot to&#39;, out);
+
+await close();
+</code></pre>
+<hr>
+<h2><code>screenshot(filePath?, opts?)</code> → <code>Promise&lt;string&gt;</code></h2>
+<p>Ad-hoc screenshot. Bound to a specific page by the <code>launch()</code> result.</p>
+<h3>Signatures</h3>
+<pre><code class="language-js">// 1. Auto-name under ./screenshots/, defaults
+const p1 = await screenshot();
+
+// 2. Explicit path; format inferred from extension
+const p2 = await screenshot(&#39;foo.png&#39;);
+const p3 = await screenshot(&#39;bar.jpg&#39;);
+
+// 3. Options object (any Playwright screenshot options)
+const p4 = await screenshot({ path: &#39;baz.png&#39;, fullPage: true, type: &#39;png&#39; });
+const p5 = await screenshot({ path: &#39;ele.png&#39;, element: page.locator(&#39;header img&#39;) });
+
+// 4. Path + overrides
+const p6 = await screenshot(&#39;zoom.png&#39;, { clip: { x: 0, y: 0, width: 800, height: 200 } });
+</code></pre>
+<h3>Options</h3>
+<p>All <a href="https://playwright.dev/docs/api/class-page#page-screenshot">Playwright <code>page.screenshot</code> options</a>
+are supported (<code>path</code>, <code>type</code>, <code>quality</code>, <code>fullPage</code>, <code>clip</code>,
+<code>element</code>, <code>omitBackground</code>, <code>caret</code>, <code>animations</code>, <code>mask</code>, etc.).
+The helper:</p>
+<ul>
+<li>Resolves the path to an absolute path under <code>./screenshots/</code> if no
+path is given.</li>
+<li>Creates parent directories as needed.</li>
+<li>Infers <code>type</code> from the file extension if you don&#39;t specify it.</li>
+<li>Strips <code>quality</code> for PNG (Playwright throws on PNG+quality).</li>
+<li>Returns the <strong>absolute path</strong> of the file written.</li>
+<li>Updates the <code>lastScreenshotPath</code> getter on the launch result.</li>
+</ul>
+<p>See <a href="screenshots.md">screenshots.md</a> for the conceptual overview.</p>
+<hr>
+<h2><code>human.*</code> — humanization helpers</h2>
+<p>Returned by <code>launch()</code> as <code>result.human</code>. All methods add realistic
+delays and mouse movement so a watching site can&#39;t tell that the
+actions came from a script.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Purpose</th>
+<th>Delay pattern</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>human.wait(ms?)</code></td>
+<td>Sleep. If <code>ms</code> is omitted, random 50-250ms.</td>
+<td>uniform</td>
+</tr>
+<tr>
+<td><code>human.pause()</code></td>
+<td>Like reading text.</td>
+<td>300-900ms uniform</td>
+</tr>
+<tr>
+<td><code>human.think()</code></td>
+<td>Like thinking.</td>
+<td>1.2-2.5s uniform</td>
+</tr>
+<tr>
+<td><code>human.hover(sel)</code></td>
+<td>Move mouse to selector with 8-18 sub-steps.</td>
+<td>40-180ms hover dwell</td>
+</tr>
+<tr>
+<td><code>human.click(sel, opts?)</code></td>
+<td>Hover, dwell, then click.</td>
+<td>60-220ms prepre-click + 20-80ms click delay</td>
+</tr>
+<tr>
+<td><code>human.type(sel, text)</code></td>
+<td>Focus, then type each char.</td>
+<td>35-140ms per char, 4% chance of 180-420ms pause between chars</td>
+</tr>
+</tbody></table>
+<h3>Example</h3>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+const { human, page } = await launch({ url: &#39;https://example.com/login&#39; });
+
+await human.wait(1500);
+await human.type(&#39;input[name=email]&#39;,    &#39;me@example.com&#39;);
+await human.think();
+await human.type(&#39;input[name=password]&#39;, &#39;hunter2&#39;);
+await human.pause();
+await human.click(&#39;button[type=submit]&#39;);
+await page.waitForLoadState(&#39;networkidle&#39;);
+</code></pre>
+<p>See <a href="architecture.md">architecture.md</a> for the rationale behind the
+delay distributions.</p>
+<hr>
+<h2><code>search(query, opts?)</code> → <code>Promise&lt;SearchResponse&gt;</code></h2>
+<p>The one-shot search helper. Opens a context, runs the query through
+the fallback chain, and closes the context.</p>
+<h3>Signature</h3>
+<pre><code class="language-js">const { search, formatResults } = require(&#39;./headless&#39;);
+
+const r = await search(&#39;node js tutorial&#39;, {
+  engine:           &#39;duckduckgo-html&#39;,  // primary
+  fallback:         [&#39;brave&#39;, &#39;searxng&#39;],  // chain (default = all 3)
+  limit:            10,
+  searxngInstance:  &#39;https://searx.be&#39;,
+  throwOnFail:      false,
+});
+
+r = {
+  query:   &#39;node js tutorial&#39;,
+  engine:  &#39;duckduckgo-html&#39;,  // which engine actually returned
+  results: [
+    { title, url, snippet, position, engine },  // 0..limit-1
+    ...
+  ],
+  tried: [
+    &#39;duckduckgo-html&#39;,  // OR { engine: &#39;brave&#39;, error: &#39;page looked blocked&#39; }
+    ...
+  ],
+}
+</code></pre>
+<h3>Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>engine</code></td>
+<td><code>string</code></td>
+<td><code>&#39;duckduckgo-html&#39;</code></td>
+<td>Which engine to try first. One of the keys in <code>ENGINES</code> (or <code>ENGINE_ALIASES</code>).</td>
+</tr>
+<tr>
+<td><code>fallback</code></td>
+<td><code>string[]</code></td>
+<td><code>[&#39;duckduckgo-html&#39;, &#39;brave&#39;, &#39;searxng&#39;]</code></td>
+<td>Engines to try in order, after the primary.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>number</code></td>
+<td><code>10</code></td>
+<td>Maximum results to return.</td>
+</tr>
+<tr>
+<td><code>searxngInstance</code></td>
+<td><code>string</code></td>
+<td><code>https://paulgo.io</code></td>
+<td>Override the SearXNG instance.</td>
+</tr>
+<tr>
+<td><code>throwOnFail</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>If <code>true</code>, throw an <code>Error</code> when all engines fail. Otherwise return an empty <code>results</code> array.</td>
+</tr>
+<tr>
+<td><code>profileDir</code></td>
+<td><code>string</code></td>
+<td>default</td>
+<td>Profile to use for the one-shot context.</td>
+</tr>
+</tbody></table>
+<h3>Result shape</h3>
+<pre><code class="language-ts">type SearchResult = {
+  title:    string;
+  url:      string;
+  snippet?: string;
+  engine:   string;    // which engine returned this
+  position: number;    // 1-based
+};
+
+type SearchResponse = {
+  query:   string;
+  engine:  string | null;     // which engine actually returned
+  results: SearchResult[];
+  tried:   Array&lt;string | { engine: string; error: string }&gt;;
+};
+</code></pre>
+<h3>Examples</h3>
+<pre><code class="language-js">// Quick one-shot
+const r = await search(&#39;playwright tutorial&#39;, { limit: 5 });
+console.log(r.results.map(x =&gt; x.title));
+
+// Pretty-print
+console.log(formatResults(r));
+
+// Force a specific engine
+const brave = await search(&#39;rust async&#39;, { engine: &#39;brave&#39; });
+
+// Manual context (so you can chain searches sharing cookies)
+const { launch } = require(&#39;./headless&#39;);
+const { context, close } = await launch({ profileDir: &#39;./profiles/me&#39; });
+try {
+  const r1 = await contextSearch(context, &#39;first query&#39;);
+  const r2 = await contextSearch(context, &#39;second query&#39;);
+} finally {
+  await close();
+}
+
+// (Where `contextSearch` is just `require(&#39;./search&#39;).search`)
+</code></pre>
+<p>See <a href="search.md">search.md</a> for the full per-engine details.</p>
+<hr>
+<h2><code>formatResults(r, opts?)</code> → <code>string</code></h2>
+<p>Pretty-print a <code>SearchResponse</code> to a string. Useful for CLI output
+and logging.</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>showUrl</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Include the URL of each result.</td>
+</tr>
+<tr>
+<td><code>showSnippet</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Include the snippet of each result.</td>
+</tr>
+</tbody></table>
+<p>Example output:</p>
+<pre><code>Search: playwright tutorial  (engine: duckduckgo-html, 5 results)
+  1. Playwright Python Tutorial
+     https://www.browserstack.com/guide/playwright-python
+     Learn how to use Playwright with Python...
+  2. ...
+</code></pre>
+<hr>
+<h2><code>makeHumanizer(page)</code> → <code>Humanizer</code></h2>
+<p>For advanced use only: if you have a <code>Page</code> from some other source
+(e.g. you&#39;ve opened a second page in the same context), you can build
+a humanizer for it directly:</p>
+<pre><code class="language-js">const { launch, makeHumanizer } = require(&#39;./headless&#39;);
+const { context, close } = await launch();
+const page = await context.newPage();
+const human = makeHumanizer(page);
+await human.type(&#39;input[name=q]&#39;, &#39;playwright&#39;);
+await page.close();
+await close();
+</code></pre>
+<hr>
+<h2>Constants</h2>
+<table>
+<thead>
+<tr>
+<th>Export</th>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>REAL_UA</code></td>
+<td><code>Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0.0 Safari/537.36</code></td>
+<td>The User-Agent the browser presents. Update <code>CHROME_VERSION</code> in <code>headless.js</code> when you upgrade Chrome.</td>
+</tr>
+<tr>
+<td><code>DEFAULT_PROFILE</code></td>
+<td><code>&lt;this folder&gt;/profile</code></td>
+<td>The default <code>profileDir</code> for <code>launch()</code> and <code>search()</code>.</td>
+</tr>
+<tr>
+<td><code>DEFAULT_ENGINE</code></td>
+<td><code>&#39;duckduckgo-html&#39;</code></td>
+<td>Default primary search engine.</td>
+</tr>
+<tr>
+<td><code>FALLBACK_CHAIN</code></td>
+<td><code>[&#39;duckduckgo-html&#39;, &#39;brave&#39;, &#39;searxng&#39;]</code></td>
+<td>Default search fallback order.</td>
+</tr>
+<tr>
+<td><code>ENGINES</code></td>
+<td><code>{ &#39;duckduckgo-html&#39;: {...}, &#39;brave&#39;: {...}, &#39;searxng&#39;: {...} }</code></td>
+<td>Registry of search engines. Each has <code>name</code>, <code>buildUrl()</code>, <code>extract()</code>, <code>healthy()</code>, <code>waitUntil</code>, <code>waitForSelector</code>, <code>waitMs</code>.</td>
+</tr>
+<tr>
+<td><code>ENGINE_ALIASES</code></td>
+<td><code>[&#39;duckduckgo-html&#39;, &#39;ddg&#39;, &#39;brave&#39;, &#39;searxng&#39;]</code></td>
+<td>Valid engine names for <code>opts.engine</code>.</td>
+</tr>
+</tbody></table>
+
+</body>
+</html>

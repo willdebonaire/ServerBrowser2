@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Web search</h1>
+<p>The <code>search()</code> helper runs a web search through one of three
+<strong>bot-friendly</strong> engines, with a built-in <strong>fallback chain</strong> so a
+single engine being down (or starting to block you) doesn&#39;t break
+your workflow.</p>
+<h2>Engines</h2>
+<table>
+<thead>
+<tr>
+<th>Engine name</th>
+<th>Endpoint</th>
+<th>Why it works</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>duckduckgo-html</code></td>
+<td><code>https://html.duckduckgo.com/html/?q=…</code></td>
+<td>The <strong>primary</strong> choice. This is DDG&#39;s purpose-built endpoint for bots and tools — it doesn&#39;t run JavaScript, doesn&#39;t throw a captcha, and returns clean HTML. Most <code>ddgr</code>-style CLI tools use it.</td>
+</tr>
+<tr>
+<td><code>brave</code></td>
+<td><code>https://search.brave.com/search?q=…</code></td>
+<td><strong>Fallback 1.</strong> Modern, no captcha for our fingerprint.</td>
+</tr>
+<tr>
+<td><code>searxng</code></td>
+<td><code>&lt;instance&gt;/search?q=…&amp;format=html</code></td>
+<td><strong>Fallback 2.</strong> Open-source metasearch. You can run your own instance or use a public one. The default public instance is <code>https://paulgo.io</code> but you should swap this for a more reliable one (e.g. <code>https://searx.be</code>).</td>
+</tr>
+</tbody></table>
+<p>Aliases:</p>
+<ul>
+<li><code>ddg</code> is an alias for <code>duckduckgo-html</code>.</li>
+</ul>
+<h3>Why not Google?</h3>
+<p>Google reliably throws a captcha on the first suspicious request and
+on every subsequent request from the same fingerprint. Even with the
+stealth layer, success rates are &lt; 30% per request. Not worth
+shipping.</p>
+<h3>Why not Bing?</h3>
+<p>Bing <em>does</em> work for some users, but is also captcha-prone and the
+DOM is heavy. We didn&#39;t pick it as a default.</p>
+<h3>Why not Startpage?</h3>
+<p>Startpage is JS-heavy and has its own bot detection. The DOM
+extractor we tried returned 0 results consistently. Excluded.</p>
+<h3>Why not Yandex?</h3>
+<p>Yandex works but English-language results are inconsistent and the
+captcha risk is non-trivial. Excluded.</p>
+<h2>Default behavior</h2>
+<pre><code class="language-js">const { search } = require(&#39;./headless&#39;);
+const r = await search(&#39;node js tutorial&#39;);
+</code></pre>
+<ul>
+<li>Tries <code>duckduckgo-html</code> first.</li>
+<li>If that returns zero results (or errors), tries <code>brave</code>.</li>
+<li>If that also fails, tries <code>searxng</code>.</li>
+<li>If all three fail, returns <code>{ query, engine: null, results: [], tried: [...] }</code>
+with diagnostic info in <code>tried</code>.</li>
+<li>The first engine to return at least one result wins.</li>
+</ul>
+<p>You can override the chain:</p>
+<pre><code class="language-js">const r = await search(&#39;rust async&#39;, {
+  engine:   &#39;brave&#39;,                  // primary
+  fallback: [&#39;duckduckgo-html&#39;],      // what to try if brave fails
+});
+</code></pre>
+<h2>CLI quick reference</h2>
+<pre><code class="language-bash"># Default (DDG, 10 results)
+node headless.js --search &quot;playwright tutorial&quot;
+
+# Limit to 5
+node headless.js --search &quot;playwright tutorial&quot; --search-limit 5
+
+# Use Brave explicitly
+node headless.js --search &quot;rust async&quot; --search-engine=brave
+
+# Use a custom SearXNG instance
+node headless.js --search &quot;privacy news&quot; \
+  --search-engine=searxng \
+  --searxng-instance=https://searx.be
+
+# JSON output (pipe into jq)
+node headless.js --search &quot;node streams&quot; --search-json | jq &#39;.results[].url&#39;
+
+# Screenshot of the results page
+node headless.js --search &quot;hello world&quot; --search-shot
+</code></pre>
+<h2>Library quick reference</h2>
+<pre><code class="language-js">const { search, launch, formatResults, ENGINES } = require(&#39;./headless&#39;);
+
+// 1. One-shot (opens + closes a context for you)
+const r = await search(&#39;node js tutorial&#39;, { limit: 5 });
+console.log(formatResults(r));
+
+// 2. With a long-lived context (share cookies across searches)
+const { context, close } = await launch({ profileDir: &#39;./profiles/me&#39; });
+try {
+  // Use the lower-level search() that takes a context:
+  const { search: ctxSearch } = require(&#39;./search&#39;);
+  const r1 = await ctxSearch(context, &#39;first query&#39;);
+  const r2 = await ctxSearch(context, &#39;second query&#39;);
+} finally {
+  await close();
+}
+</code></pre>
+<h2>Result shape</h2>
+<pre><code class="language-ts">type SearchResult = {
+  title:    string;      // result headline
+  url:      string;      // canonical, un-rewritten URL
+  snippet?: string;      // short description (may be empty)
+  engine:   string;      // which engine returned this
+  position: number;      // 1-based
+};
+
+type SearchResponse = {
+  query:   string;
+  engine:  string | null;            // which engine actually succeeded
+  results: SearchResult[];
+  tried:   Array&lt;
+    | string                           // engine name (success)
+    | { engine: string; error: string }  // engine that failed
+  &gt;;
+};
+</code></pre>
+<p><code>formatResults(r)</code> pretty-prints this to a string for CLI use:</p>
+<pre><code>Search: node js tutorial  (engine: duckduckgo-html, 5 results)
+  1. Tutorial | Node.js
+     https://nodejs.org/en/learn/getting-started/introduction-to-nodejs
+     ...
+  2. ...
+</code></pre>
+<h2>How each engine is queried</h2>
+<p>For each engine the <code>search.js</code> module knows how to:</p>
+<ul>
+<li><strong>Build the URL</strong> with the query.</li>
+<li><strong>Pick a wait condition</strong> (<code>domcontentloaded</code> is enough for the
+HTML endpoint; <code>networkidle</code> for the JS-heavy ones).</li>
+<li><strong>Wait for a result-specific selector</strong> so the parser doesn&#39;t run
+before the page has results.</li>
+<li><strong>Decide if the page looks blocked</strong> (specific phrases like &quot;Just
+a moment&quot;, Cloudflare challenge elements, or zero results).</li>
+<li><strong>Extract a <code>{title, url, snippet}</code> triple per result</strong>, unwrapping
+redirects (e.g. DDG&#39;s <code>?uddg=</code> wrapping) and filtering out the
+engine&#39;s own UI links.</li>
+</ul>
+<h2>Picking a SearXNG instance</h2>
+<p>SearXNG is open-source and anyone can run an instance. Public
+instances are listed at <a href="https://searx.space">https://searx.space</a> (the tracker that tells
+you which instances are alive and not blocked).</p>
+<p>A few reliable public ones (check the tracker for current status):</p>
+<ul>
+<li><code>https://searx.be</code></li>
+<li><code>https://search.bus-hit.me</code></li>
+<li><code>https://searx.tiekoetter.com</code></li>
+</ul>
+<p>You can also run your own — it&#39;s a single Docker container.</p>
+<p>The CLI sets the default to <code>https://paulgo.io</code>, but you should
+override with <code>--searxng-instance=...</code> for reliability.</p>
+<h2>The <code>tried</code> field</h2>
+<p><code>r.tried</code> is a diagnostic. If everything worked, it&#39;s just
+<code>[&#39;duckduckgo-html&#39;]</code> (or whichever engine succeeded). If something
+failed, the failed entries are objects with an <code>error</code> string:</p>
+<pre><code class="language-js">{
+  tried: [
+    { engine: &#39;duckduckgo-html&#39;, error: &#39;page looked blocked&#39; },
+    { engine: &#39;brave&#39;,           error: &#39;no results parsed&#39; },
+    &#39;searxng&#39;,   // ← this one succeeded
+  ]
+}
+</code></pre>
+<p>Use this to debug &quot;search returned nothing&quot; cases. The error strings
+are short and human-readable.</p>
+<h2>When all engines fail</h2>
+<p>By default, the helper returns an empty <code>results</code> array and the
+<code>tried</code> field tells you why each engine failed. If you&#39;d rather get
+an exception:</p>
+<pre><code class="language-js">const r = await search(&#39;query&#39;, { throwOnFail: true });
+// throws: Error: All search engines failed for query &quot;query&quot;: [...]
+</code></pre>
+<h2>Performance</h2>
+<p>A single search takes ~2-3 seconds (mostly waiting for the page
+settle). The engines are tried <strong>sequentially</strong> in fallback order,
+so a search that needs all three fallbacks takes ~6-9 seconds. If
+you need to do many searches in parallel, launch multiple
+<code>launch()</code> contexts.</p>
+<h2>Limitations</h2>
+<ul>
+<li><strong>English-language queries</strong> work best on all three engines.</li>
+<li><strong>Non-Latin scripts</strong> (Chinese, Arabic, etc.) work but the
+snippets are sometimes empty for the HTML endpoint.</li>
+<li><strong>Time-sensitive queries</strong> (&quot;weather today&quot;) may return slightly
+older results than the engine&#39;s web UI because we&#39;re hitting
+the simplified endpoints.</li>
+<li><strong>No image / video / news search</strong>. Only the main web-result
+list. (Easy to extend if you need it; each engine&#39;s HTML output
+has separate tabs.)</li>
+</ul>
+
+</body>
+</html>

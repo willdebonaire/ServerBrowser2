@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Commands Reference</h1>
+<p>Complete inventory of every command ServerBrowser exposes, plus the commands
+that the run scripts prove are needed but that do not exist yet.</p>
+<blockquote>
+<p><strong>Reading this doc.</strong> Sections B–F document what works today. Section G
+documents commands that are <strong>specified but not implemented</strong> — they are
+marked <code>PROPOSED</code> throughout so they are never mistaken for working code.
+<strong>39 commands</strong> are proposed across G1–G7. G1.1 explains why <code>setvalue</code>
+needs more than one mode.</p>
+</blockquote>
+<hr>
+<h2>A. Command surfaces</h2>
+<p>There are four independent command tables in the codebase. They are not the
+same size, and they do not all support the same commands.</p>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Entry point</th>
+<th>Transport</th>
+<th>Commands</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A1</strong> standalone CLI</td>
+<td><code>standalone/index.js</code></td>
+<td>forks a script per command</td>
+<td>66</td>
+</tr>
+<tr>
+<td><strong>A2</strong> live verbs</td>
+<td><code>scripts/live.js</code></td>
+<td>CDP to the running Chrome</td>
+<td>59</td>
+</tr>
+<tr>
+<td><strong>A3</strong> remote verbs</td>
+<td><code>scripts/connect.js</code></td>
+<td>CDP to a <em>remote</em> browser</td>
+<td>53</td>
+</tr>
+<tr>
+<td><strong>A4</strong> tunnel verbs</td>
+<td><code>scripts/tunnel.js</code></td>
+<td>local, spawns provider</td>
+<td>5</td>
+</tr>
+</tbody></table>
+<p>A1 breaks down as <code>browser</code> 53, <code>tunnel</code> 5, <code>ai</code> 3, <code>api-keys</code> 5. A2&#39;s
+six extras over A3 are the local <code>tunnel-*</code> verbs and <code>agent-tabs</code>.</p>
+<h3>The three ways to invoke</h3>
+<pre><code class="language-bash"># 1. Standalone CLI (grouped, most convenient)
+node standalone/index.js browser goto https://example.com
+npm run standalone -- browser goto https://example.com
+
+# 2. Live verbs directly (no group prefix, skips one fork layer)
+node scripts/live.js goto https://example.com
+
+# 3. Remote verbs (browser on another machine)
+CDP_URL=http://10.0.0.5:9222 node scripts/connect.js goto https://example.com
+</code></pre>
+<p><code>standalone/index.js</code> dispatches <code>&lt;group&gt; &lt;subcommand&gt; [args...]</code> to
+<code>standalone/commands/&lt;group&gt;.js</code>. Each group is a flat object of
+one-argument-position functions; <code>browser.js</code> forks <code>scripts/live.js</code> per call.</p>
+<h3>Output contract</h3>
+<p>Every command writes <strong>one JSON object per line</strong> to stdout, shaped:</p>
+<pre><code class="language-json">{ &quot;cmd&quot;: &quot;&lt;name&gt;&quot;, &quot;ok&quot;: true,  &quot;result&quot;: &lt;any&gt; }
+{ &quot;cmd&quot;: &quot;&lt;name&gt;&quot;, &quot;ok&quot;: false, &quot;error&quot;: &quot;&lt;message&gt;&quot; }
+</code></pre>
+<p><code>standalone/commands/browser.js</code> parses those lines and re-emits either the
+single result or an array if a command produced several. So from the
+standalone CLI you get the bare <code>result</code> value, <strong>without</strong> the <code>ok</code>/<code>cmd</code>
+wrapper. <code>ok: false</code> becomes a non-zero exit and a message on stderr.</p>
+<h3>Global flags</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Where</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--agent-id &lt;id&gt;</code></td>
+<td>A2, A3</td>
+<td>Routes to a named agent tab. Accepted <strong>anywhere</strong> in argv, in either order, and stripped before the command name is read (<code>live.js:611-620</code>).</td>
+</tr>
+<tr>
+<td><code>--stdin</code></td>
+<td>A2</td>
+<td>Batch mode — see below.</td>
+</tr>
+<tr>
+<td><code>--flag value</code> / <code>--flag=value</code></td>
+<td>A1 <code>ai</code> group only</td>
+<td>Named options; see §F.</td>
+</tr>
+</tbody></table>
+<h3>Batch mode (<code>--stdin</code>) — already implemented, previously undocumented</h3>
+<p><code>live.js:637-651</code>. Feeds <strong>newline-delimited JSON</strong> into one long-lived
+process that executes commands in order. This is the shortest path to running
+a multi-step task: one process spawn instead of N.</p>
+<pre><code class="language-bash">node scripts/live.js --stdin &lt;&lt;&#39;EOF&#39;
+{&quot;cmd&quot;:&quot;goto&quot;,&quot;args&quot;:[&quot;https://example.com/login&quot;]}
+{&quot;cmd&quot;:&quot;waitfor&quot;,&quot;args&quot;:[&quot;#email&quot;]}
+{&quot;cmd&quot;:&quot;fill&quot;,&quot;args&quot;:[&quot;#email&quot;,&quot;me@example.com&quot;]}
+{&quot;cmd&quot;:&quot;click&quot;,&quot;args&quot;:[&quot;button[type=submit]&quot;]}
+{&quot;cmd&quot;:&quot;text&quot;}
+EOF
+---
+
+## B. `browser` — navigation
+
+All of these go through A1 → A2. `goto`/`reload`/`back`/`forward` use
+`waitUntil: &#39;domcontentloaded&#39;` with a 60s timeout.
+
+| Command | Arguments | Returns |
+| ------- | --------- | ------- |
+| `goto` | `&lt;url&gt;` | `{ url, title }` |
+| `reload` | — | `{ url, title }` |
+| `back` | — | `{ url, title }` |
+| `forward` | — | `{ url, title }` |
+| `wait` | `&lt;ms&gt;` | `{ waitedMs }` |
+| `waitfor` | `&lt;css&gt; [timeoutMs]` | `{ selector, present: true }` — default timeout 15000 |
+
+---
+
+## C. `browser` — interaction
+
+| Command | Arguments | Returns | Notes |
+| ------- | --------- | ------- | ----- |
+| `fill` | `&lt;css&gt; &lt;text&gt;` | `{ selector, text }` | Sets the value in one shot. **Does not work on React-controlled inputs** — see §G1. |
+| `type` | `&lt;css&gt; &lt;text&gt; [delayMs]` | `{ selector, text }` | Key-by-key. `delayMs` defaults to 0. |
+| `click` | `&lt;css&gt;` | `{ selector, url }` | DOM-level click. Does not open native menus or file choosers. |
+| `press` | `&lt;css&gt; &lt;key&gt;` | `{ selector, key }` | Focuses the selector, then presses. |
+| `keyboard` | `&lt;key&gt;` | `{ key }` | Presses without focusing a selector. |
+| `clear` | `&lt;css&gt;` | `{ selector, cleared: true }` | Implemented as `fill(css, &#39;&#39;)`. |
+
+---
+
+## D. `browser` — inspection &amp; extraction
+
+### Inspection
+
+| Command | Arguments | Returns |
+| ------- | --------- | ------- |
+| `url` | — | current URL string |
+| `title` | — | page title string |
+| `text` | — | `document.body.innerText` |
+| `html` | — | `page.content()` — full serialized DOM |
+| `dump` | — | `{ url, title, inputs[≤50], buttons[≤40], links[≤40], text[4000] }` |
+| `eval` | `&lt;expression&gt;` | the expression&#39;s value |
+| `save-page-json` | `&lt;file&gt;` | writes a JSON snapshot of the page |
+
+`dump` is the discovery command — it is how you find the selectors to pass to
+everything else. Each `inputs` entry carries `tag`, `type`, `name`, `id`,
+`placeholder`, `aria`, and `value` truncated to 120 chars.
+
+`eval` wraps its argument as `new Function(&#39;return ((&#39; + js + &#39;))&#39;)`
+(`live.js:344`), so it is **expression-only**: no statements, no `await`, and
+no top-level `return`.
+
+### Extraction
+
+| Command | Arguments | Returns |
+| ------- | --------- | ------- |
+| `extract-css` | `&lt;selector&gt;` | text content of each match |
+| `extract-regex` | `&lt;pattern&gt; [flags]` | regex matches over the page text |
+| `extract-table` | `&lt;selector&gt;` | parsed rows |
+| `extract-links` | `[filter]` | matching hrefs |
+| `extract-images` | — | image srcs |
+
+### Capture
+
+| Command | Arguments | Returns |
+| ------- | --------- | ------- |
+| `screenshot` | `&lt;file&gt;` | `{ file }` — always `fullPage: true` |
+| `screenshot-element` | `&lt;selector&gt; &lt;file&gt;` | `{ file }` |
+| `pdf` | `&lt;file&gt;` | `{ file }` — Chromium only, i.e. not the live headed Chrome |
+
+---
+</code></pre>
+<p>Each line is either JSON (<code>{&quot;cmd&quot;:…,&quot;args&quot;:[…],&quot;agentId&quot;:…}</code>) or a bare
+space-separated string (<code>goto https://example.com</code> — first token is the
+command, rest are args). Commands execute as a serial promise chain, so
+ordering is guaranteed. Failures are reported per-command and <strong>do not</strong> abort
+the chain. This is the mechanism the proposed <code>run</code> command in §G4 would
+formalise.</p>
+<h2>E. <code>browser</code> — tabs, contexts, HUD, datastore</h2>
+<h3>Tabs &amp; agent tabs</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tabs</code></td>
+<td>—</td>
+<td><code>[{ i, url, title, closed }]</code></td>
+</tr>
+<tr>
+<td><code>tab</code></td>
+<td><code>&lt;index&gt;</code></td>
+<td><code>{ active, url, title }</code></td>
+</tr>
+<tr>
+<td><code>close-tab</code></td>
+<td><code>[index|selector]</code></td>
+<td><code>{ remaining, active }</code></td>
+</tr>
+<tr>
+<td><code>agent-tab-create</code></td>
+<td><code>&lt;name&gt; [contextId]</code></td>
+<td>the new tab&#39;s id</td>
+</tr>
+<tr>
+<td><code>agent-tab-switch</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>switches the active page</td>
+</tr>
+<tr>
+<td><code>agent-tab-close</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>closes the agent tab</td>
+</tr>
+</tbody></table>
+<p><code>close-tab</code> refuses to close the last tab — the live browser must stay up.
+With no argument it closes the active tab; with a non-numeric argument it
+searches every open tab for a matching selector.</p>
+<p><code>agent-tabs</code> <strong>exists in <code>live.js:579</code> but is not exposed</strong> in
+<code>standalone/commands/browser.js</code>, so it is unreachable from the standalone
+CLI. Documented here as a real command, with that caveat.</p>
+<h3>Browser contexts</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>context-new</code></td>
+<td>—</td>
+<td>new context id</td>
+</tr>
+<tr>
+<td><code>context-use</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>switches context</td>
+</tr>
+<tr>
+<td><code>contexts</code></td>
+<td>—</td>
+<td>array of context ids</td>
+</tr>
+</tbody></table>
+<h3>HUD overlay</h3>
+<p>These drive the on-screen overlay injected by <code>scripts/overlay.js</code>. They are
+<strong>silent no-ops when the HUD is not installed</strong> — check <code>overlay-state</code> first.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>status-set</code></td>
+<td><code>&lt;text&gt;</code></td>
+<td><code>{ text }</code></td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td><code>&lt;value&gt;</code></td>
+<td><code>{ progress }</code></td>
+</tr>
+<tr>
+<td><code>notify</code></td>
+<td><code>&lt;text&gt; [durationMs]</code></td>
+<td><code>{ text, duration }</code> — default 4000</td>
+</tr>
+<tr>
+<td><code>overlay-state</code></td>
+<td>—</td>
+<td>whether the HUD is installed</td>
+</tr>
+<tr>
+<td><code>pause</code></td>
+<td>—</td>
+<td>pauses the driver</td>
+</tr>
+<tr>
+<td><code>resume</code></td>
+<td>—</td>
+<td>resumes it</td>
+</tr>
+</tbody></table>
+<h3>Datastore (<code>db-*</code>)</h3>
+<p>These match <code>/^(db-|tunnel-)/</code> and run <strong>locally — no browser session
+required</strong> (<code>live.js:170</code>, <code>live.js:628</code>). They wrap a DuckDB datastore,
+lazily connected; set <code>DATASTORE_PATH</code> or use <code>db-connect</code> to pick the file.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>db-connect</code></td>
+<td><code>&lt;path&gt;</code></td>
+<td>connects</td>
+</tr>
+<tr>
+<td><code>db-close</code></td>
+<td>—</td>
+<td>closes</td>
+</tr>
+<tr>
+<td><code>db-status</code></td>
+<td>—</td>
+<td>connection state</td>
+</tr>
+<tr>
+<td><code>db-query</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>result rows</td>
+</tr>
+<tr>
+<td><code>db-exec</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>statement result</td>
+</tr>
+<tr>
+<td><code>db-create-table</code></td>
+<td><code>&lt;table&gt; &lt;columns&gt;</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>db-insert</code></td>
+<td><code>&lt;table&gt; &lt;json&gt;</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>db-select</code></td>
+<td><code>&lt;table&gt; &lt;whereJson&gt;</code></td>
+<td>rows</td>
+</tr>
+<tr>
+<td><code>db-update</code></td>
+<td><code>&lt;table&gt; &lt;setJson&gt; &lt;whereJson&gt;</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>db-delete</code></td>
+<td><code>&lt;table&gt; &lt;whereJson&gt;</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>db-tables</code></td>
+<td>—</td>
+<td>table names</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>F. <code>tunnel</code>, <code>ai</code>, <code>api-keys</code></h2>
+<h3><code>tunnel</code> (A4)</h3>
+<p>Password-protected ingress to the VNC web view. Providers: <code>cloudflared</code>
+(default), <code>ngrok</code>, <code>custom</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>create</code></td>
+<td><code>&lt;name&gt; &lt;password&gt; [provider]</code></td>
+<td>provider + public URL</td>
+</tr>
+<tr>
+<td><code>route</code></td>
+<td><code>&lt;target&gt; [provider]</code></td>
+<td>re-points an existing tunnel</td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td><code>[provider]</code></td>
+<td>current public URL</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>[provider]</code></td>
+<td>provider, pid, uptime</td>
+</tr>
+<tr>
+<td><code>stop</code></td>
+<td><code>[provider]</code></td>
+<td>stopped</td>
+</tr>
+</tbody></table>
+<p><code>live.js</code> carries a <strong>duplicate</strong> set of <code>tunnel-*</code> verbs (<code>tunnel-create</code>,
+<code>tunnel-route</code>, <code>tunnel-url</code>, <code>tunnel-status</code>, <code>tunnel-stop</code> at
+<code>live.js:245-277</code>) alongside the same functionality in <code>scripts/tunnel.js</code>.
+The standalone <code>tunnel</code> group targets <code>scripts/tunnel.js</code>; the <code>live.js</code>
+copies are the local-only path. Both work; prefer the standalone group.</p>
+<h3><code>ai</code></h3>
+<p>Backed by <code>standalone/providers/ai.js</code>, which normalises every provider to
+<code>chat({ prompt, system, model, maxTokens, temperature }) → { text, usage }</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers</code></td>
+<td>—</td>
+<td><code>[{ provider, keyAvailable, keySource }]</code> + store path</td>
+</tr>
+<tr>
+<td><code>ping</code></td>
+<td><code>[provider]</code></td>
+<td><code>{ ok: true, … }</code> — cheap round-trip; defaults to <code>echo</code></td>
+</tr>
+<tr>
+<td><code>chat</code></td>
+<td><code>&lt;provider&gt; &lt;prompt&gt; [flags]</code></td>
+<td><code>{ text, usage }</code></td>
+</tr>
+</tbody></table>
+<p>Flags are parsed by <code>splitFlags</code> (<code>standalone/commands/ai.js:16-33</code>) and accept
+both <code>--flag value</code> and <code>--flag=value</code>:</p>
+<pre><code class="language-bash">node standalone/index.js ai chat openai &quot;summarise this page&quot; \
+  --model gpt-4o-mini --system &quot;be terse&quot; --max-tokens 800 --temperature 0.2
+</code></pre>
+<p>Unflagged tokens are joined with spaces, so multi-word prompts need no quoting.</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Credentials</th>
+<th>Base URL override</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>echo</code></td>
+<td>none — offline, deterministic</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>openai</code></td>
+<td><code>OPENAI_API_KEY</code> or the key store</td>
+<td><code>OPENAI_BASE_URL</code></td>
+</tr>
+<tr>
+<td><code>anthropic</code></td>
+<td><code>ANTHROPIC_API_KEY</code> or the key store</td>
+<td><code>ANTHROPIC_BASE_URL</code></td>
+</tr>
+<tr>
+<td><code>ollama</code></td>
+<td>none</td>
+<td><code>OLLAMA_URL</code></td>
+</tr>
+</tbody></table>
+<h3><code>api-keys</code></h3>
+<p>Keys live in <code>~/.config/serverbrowser/api-keys.json</code> — directory <code>0700</code>, file
+<code>0600</code>, never written into the repo.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Arguments</th>
+<th>Returns</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>set</code></td>
+<td><code>&lt;provider&gt; &lt;key&gt;</code></td>
+<td><code>{ provider, set: true, stored: &lt;masked&gt;, file, mode: &#39;0600&#39; }</code></td>
+</tr>
+<tr>
+<td><code>get</code></td>
+<td><code>&lt;provider&gt; [--reveal]</code></td>
+<td><code>{ provider, present, key, revealed }</code></td>
+</tr>
+<tr>
+<td><code>list</code></td>
+<td>—</td>
+<td><code>{ store, providers: [{ provider, key: &lt;masked&gt; }] }</code></td>
+</tr>
+<tr>
+<td><code>remove</code></td>
+<td><code>&lt;provider&gt;</code></td>
+<td><code>{ provider, removed }</code></td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>—</td>
+<td><code>{ file, mode }</code></td>
+</tr>
+</tbody></table>
+<p><code>get</code> and <code>list</code> <strong>mask</strong> the value unless <code>--reveal</code> is passed, so printing a
+key in full is always deliberate. <code>remove</code> does not lower-case the provider
+name, unlike <code>set</code>/<code>get</code> — a casing mismatch silently fails to delete.</p>
+<h2>G. Commands that do not exist yet</h2>
+<p>Every entry here was derived by mining the run scripts for operations they had
+to reimplement by hand because no command covers them. The source line is
+given as evidence. <strong>None of these are implemented.</strong></p>
+<h3>G1. Correctness gaps</h3>
+<p>These are workarounds the scripts needed — real gaps in the current verbs.</p>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>setvalue</code></td>
+<td><code>&lt;css&gt; &lt;text&gt; [mode]</code></td>
+<td>React-safe fill. <code>browser fill</code> uses Playwright&#39;s <code>fill</code>, which writes <code>.value</code> without going through the native setter, so React never sees the change and the field resets on submit. <strong><code>mode</code> selects between two strategies that are NOT interchangeable</strong> — see G1.1 below. Hand-written at <code>scripts/gumroad-create.js:120</code> (<code>setInputValue</code>), <code>:211</code> (<code>setReactValue</code>), and again in <code>fill_helper.js</code> as <code>setVal</code> (which additionally handles <code>SELECT</code>).</td>
+</tr>
+<tr>
+<td><code>clickpoint</code></td>
+<td><code>&lt;css&gt; [index] [offset]</code></td>
+<td>Trusted mouse events via <code>Input.dispatchMouseEvent</code>. A DOM <code>el.click()</code> will not open menus or file choosers. Hand-written at <code>scripts/gumroad-create.js:66-78</code> and <code>scripts/gumroad-upload.js:90-96</code>.</td>
+</tr>
+<tr>
+<td><code>upload</code></td>
+<td><code>&lt;css&gt; &lt;file&gt;</code></td>
+<td>File attach. Must use the <code>backendNodeId</code> from the <code>Page.fileChooserOpened</code> event <em>while the chooser is open</em> — setting files on a node obtained from <code>DOM.querySelector</code> silently fails. <code>scripts/gumroad-upload.js:97-130</code> documents this in detail.</td>
+</tr>
+<tr>
+<td><code>errors</code></td>
+<td>—</td>
+<td>Scan <code>[aria-invalid=&quot;true&quot;]</code> and walk up the DOM for the message. This is the only way to learn <em>why</em> a form refused to submit; every failure path in <code>scripts/gumroad-create.js:100-118</code> needs it.</td>
+</tr>
+<tr>
+<td><code>nth</code> option</td>
+<td>on every selector verb</td>
+<td>22 separate <code>wd*.js</code> files exist solely because each site needed a different hard-coded selector. A <code>::nth=2</code> or <code>|nth</code> suffix on any verb would collapse that whole family.</td>
+</tr>
+</tbody></table>
+<h3>G1.1 <code>setvalue</code> needs two modes, not one</h3>
+<p>The scripts contain <strong>three</strong> distinct implementations of &quot;set a field&quot;, and
+they are not interchangeable. A single <code>setvalue</code> would have to pick a mode, so
+this is worth spelling out:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Mechanism</th>
+<th>Fails when</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>native</code></td>
+<td><code>Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,&#39;value&#39;).set</code> + dispatch <code>input</code>/<code>change</code></td>
+<td>The component is a <strong>fully controlled</strong> form whose submit handler reads React state rather than the DOM. <code>gumroad-create.js:203-209</code> documents this precisely: the DOM value <em>and the cached React props both show the new text</em>, yet on submit React still sees the empty initial state.</td>
+</tr>
+<tr>
+<td><code>handler</code></td>
+<td>Find <code>Object.keys(el).find(k =&gt; k.startsWith(&#39;__reactProps&#39;))</code> and call <code>el[k].onChange({target:{value}})</code> directly</td>
+<td>The element isn&#39;t React, or the handler is under a different prop name.</td>
+</tr>
+<tr>
+<td><code>select</code></td>
+<td>Plain <code>el.value = v</code> — no setter, no events</td>
+<td>Never, for <code>&lt;select&gt;</code>; <code>fill_helper.js</code> branches on tag name for exactly this reason.</td>
+</tr>
+</tbody></table>
+<p>So <code>gumroad-create.js</code> needs <code>handler</code> for <code>/products/new</code> (<code>setReactValue</code>,
+line 211) but is written defensively enough to keep <code>setInputValue</code> (line 120)
+around for markup-readiness checks. <code>fill_helper.js</code> needs <code>native</code>/<code>select</code>
+because those ATS forms are uncontrolled.</p>
+<p><strong>Recommendation:</strong> <code>setvalue &lt;css&gt; &lt;text&gt; --mode auto</code> should try <code>native</code>,
+read back the value, and fall back to <code>handler</code> when <code>__reactProps</code> is
+present — and should <em>warn</em> rather than silently succeed, since the <code>native</code>
+failure mode is precisely a silent one.</p>
+<h3>G2. Anti-detection &amp; resilience</h3>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>findtab</code></td>
+<td><code>&lt;urlRegex&gt;</code></td>
+<td>20+ root scripts open with the identical line <code>ctx.pages().find(p =&gt; p.url().includes(&#39;...&#39;))</code>. Seen in <code>wd2.js</code>, <code>wd10-23.js</code>, <code>fill_mantu_final.js</code>, <code>mantu_*.js</code>, <code>jobsearch/step_job.js</code>.</td>
+</tr>
+<tr>
+<td><code>acceptdialogs</code></td>
+<td><code>[on|off]</code></td>
+<td><code>pg.on(&#39;dialog&#39;, d =&gt; d.accept())</code> is copy-pasted into every Workday/Mantu script (<code>wd2.js</code>, <code>fill_mantu_final.js</code>, <code>mantu_onepass.js</code>, <code>mantu_submit2.js</code>, <code>mantu_submit3.js</code>). Once per session beats once per script.</td>
+</tr>
+<tr>
+<td><code>waitforclear</code></td>
+<td><code>&lt;titleRegex&gt; [timeoutMs]</code></td>
+<td>Wait for a blocking interstitial to clear, given its title pattern. The corpus only ever handles one of these — Cloudflare&#39;s &quot;Just a moment…&quot; — with a hand-rolled 10×2s loop in <code>jobsearch/step_job.js:20-31</code>. Keeping the pattern as a <strong>parameter</strong> rather than hardcoding Cloudflare is the point: every SPA, bot-check, and cookie wall has its own marker, and this generalises.</td>
+</tr>
+<tr>
+<td><code>waitfortext</code></td>
+<td><code>&lt;regex&gt; [timeoutMs]</code></td>
+<td>Text-based readiness. Selectors break across sites; prose does not.</td>
+</tr>
+</tbody></table>
+<h3>G3. Selection &amp; navigation sugar</h3>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>clicktext</code></td>
+<td><code>&lt;text&gt; [index]</code></td>
+<td>Match by visible label. <code>browselive.js:24-31</code> and <code>jobsearch/click_apply.js</code> both hand-roll it; <code>click_apply.js:8-11</code> explains why — the control is a <code>&lt;button&gt;</code> whose target lives in an <em>attribute</em>, not an <code>&lt;a&gt;</code>.</td>
+</tr>
+<tr>
+<td><code>radio</code></td>
+<td><code>&lt;name&gt; &lt;value|index&gt;</code></td>
+<td><code>click_radios.js</code>, <code>click_radios2.js</code>, <code>fill_ashby_radios.js</code>, <code>fill_helper.js</code> (which also force-checks sponsorship and LinkedIn radios).</td>
+</tr>
+<tr>
+<td><code>scrollto</code></td>
+<td><code>&lt;css&gt; [offset]</code></td>
+<td>Scroll into view and centre before clicking. <code>scripts/gumroad-upload.js:142-168</code> (<code>scrollToAndCentre</code>, <code>centreOf</code>, <code>parkAndCentre</code>) exists purely for this.</td>
+</tr>
+<tr>
+<td><code>dismiss</code></td>
+<td>—</td>
+<td>Cookie/consent banner dismissal. Hand-written at <code>scripts/gumroad-create.js:84-99</code> and <code>scripts/gumroad-upload.js:406</code>. <code>wd2.js</code> grows its own cookie-banner block around the same idea.</td>
+</tr>
+<tr>
+<td><code>sniff</code></td>
+<td>—</td>
+<td>URL + title + inputs + buttons + text in <strong>one</strong> spawn. Today that is five commands and five Node cold starts. <code>browselive.js</code> and <code>live.js:329</code> (<code>dump</code>) each implement a partial version.</td>
+</tr>
+<tr>
+<td><code>fillmap</code></td>
+<td><code>&lt;json&gt; --rules &lt;json&gt;</code></td>
+<td>Fill many fields in one pass, <strong>where the rules are data, not code.</strong> <code>fill_helper.js</code>&#39;s <code>FILL_JS</code> hardcodes a job-application schema — it regex-matches <code>name</code>/<code>id</code>/<code>placeholder</code> against email/phone/linkedin/location/name/employer and force-checks sponsorship radios. That logic is the valuable part, but baking the ATS vocabulary into a command would make it useless off that domain. Specifying the field patterns as a passed-in rules map keeps the mechanism generic: the same command fills an ATS form, a checkout, or a settings page.</td>
+</tr>
+</tbody></table>
+<h3>G4. Run state</h3>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>state save</code></td>
+<td><code>&lt;name&gt; &lt;json&gt;</code></td>
+<td>Four scripts each grew their own resumable-state implementation: <code>scripts/gumroad-upload.js:456-466</code>, <code>scripts/indeed-post-all.js:21-27</code>, <code>harvest_ai_platforms.js:137-148</code>, <code>jobsearch/harvest_jobs.js</code>.</td>
+</tr>
+<tr>
+<td><code>state load</code></td>
+<td><code>&lt;name&gt;</code></td>
+<td>ditto</td>
+</tr>
+<tr>
+<td><code>run</code></td>
+<td><code>&lt;jsonArray&gt;</code></td>
+<td>Formalise §A <code>--stdin</code> into one CLI verb: <code>browser run &#39;[{&quot;goto&quot;:&quot;…&quot;},{&quot;fill&quot;:[&quot;#e&quot;,&quot;a@b.c&quot;]}]&#39;</code>. One fork, N commands, single JSON array back. Needs a <code>stopOnError</code> flag and a per-step index in the response, or mid-batch failures become hard to debug.</td>
+</tr>
+</tbody></table>
+<h3>G5. Cross-cutting</h3>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>run-script</code></td>
+<td><code>&lt;file&gt; [args]</code></td>
+<td><code>scripts/live-run.js</code> already does this: it intercepts <code>chromium.launch</code> in a stored script and redirects it to <code>connectOverCDP</code>, and suppresses every <code>close()</code> so the live browser survives. It is not reachable from the standalone CLI.</td>
+</tr>
+<tr>
+<td><code>tunnel-*</code> dedupe</td>
+<td>—</td>
+<td><code>live.js:245-277</code> and <code>scripts/tunnel.js</code> implement the same five operations twice. Worth collapsing so there is one code path and one set of semantics.</td>
+</tr>
+</tbody></table>
+<h3>G6. Second pass — found after the first draft</h3>
+<p>These were missed initially and surfaced on a deeper sweep.</p>
+<blockquote>
+<p><strong>Domain-neutrality rule.</strong> No proposed command may hardcode a vocabulary.
+Region names, phone numbers, field labels, and site markers belong in a
+passed-in rules file, never in the command&#39;s logic. Where a corpus example
+is job-specific below, that is evidence the <em>mechanism</em> is needed — not a
+licence to bake the domain in.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>retry</code></td>
+<td><code>&lt;cmd&gt; [args] --times N --on &lt;regex&gt;</code></td>
+<td>The corpus contains <strong>37 hand-rolled <code>for (let i = 0; i &lt; …)</code> retry loops</strong> with no shared helper. <code>scripts/gumroad-create.js:195</code> is the clearest case: 3 attempts, each re-navigating to a <em>fresh</em> page because a partially-filled controlled form poisons the retry (<code>gumroad-create.js:177-178</code>). A generic <code>retry</code> needs a <strong>reset hook</strong> per attempt, which is why this cannot be a trivial wrapper.</td>
+</tr>
+<tr>
+<td><code>settle</code></td>
+<td><code>[selector]</code></td>
+<td>The universal <code>waitForTimeout(2500)</code> / <code>(3500)</code> appears <strong>42 times</strong>. These are site-tuned magic numbers, not readiness checks. <code>waitfor</code> covers elements; nothing covers &quot;the SPA finished re-rendering&quot;.</td>
+</tr>
+<tr>
+<td><code>classify</code></td>
+<td><code>&lt;url&gt; --rules &lt;json&gt;</code></td>
+<td>Map a URL to a label via caller-supplied regex rules. The generic mechanism is <strong>&quot;route this URL to a handler&quot;</strong> — region is just what the corpus happens to bucket by. <code>bulk1.js:7-12</code> and <code>apply_all_tabs.js:13-18</code> hold a byte-identical (md5-verified) region classifier; <code>bulk2.js:7-13</code> holds a third that <strong>actively contradicts them</strong>, classifying <code>meltwater</code> and <code>pandora</code> as <code>ASIA</code> where the other two say <code>UK</code>. Since the result selects the phone and address, the same employer gets different PII depending on which script runs — a live data-corruption bug. With rules as a parameter the same command serves tax-form selection, locale routing, or per-tenant config.</td>
+</tr>
+<tr>
+<td><code>localstorage</code></td>
+<td><code>[key] [value]</code></td>
+<td>12 direct <code>localStorage</code> accesses across the corpus. Note <code>live.js:100</code> writes <code>__sb_agent_id</code> via <code>addInitScript</code> <strong>and</strong> <code>stampAgentMarker</code> so an agent tab can be rediscovered after its creating process exits — that persistence contract has no command.</td>
+</tr>
+<tr>
+<td><code>inject</code></td>
+<td><code>&lt;file&gt;</code></td>
+<td><code>stealth.js</code> and <code>overlay.js</code> are only ever installed through <code>context.addInitScript</code> at startup (<code>vnc-driver.js:118-119, 149-150</code>). There is no way to inject a script into the <strong>already-running</strong> live browser, which is what you need when iterating on a new init script.</td>
+</tr>
+<tr>
+<td><code>toggle</code></td>
+<td><code>&lt;css&gt; [state]</code></td>
+<td>Radio/toggle state is read inline everywhere via <code>aria-checked</code> / <code>:checked</code> queries (<code>gumroad-create.js:226-234</code> toggles a <code>button[aria-checked]</code> by calling its <code>__reactProps.onClick</code>). Reading <em>and</em> setting toggle state is a distinct operation from <code>click</code>.</td>
+</tr>
+<tr>
+<td><code>poll</code></td>
+<td><code>&lt;expr&gt; --until &lt;json&gt; --times N</code></td>
+<td><code>gumroad-create.js:239-243</code> documents a genuine race: reading <code>select.value</code> in the same tick as <code>onChange()</code> still reports the old value because React has not re-rendered. The fix was &quot;change it, then poll for the new value&quot; — a general capability, not a one-off.</td>
+</tr>
+<tr>
+<td><code>profiles</code></td>
+<td><code>list | set &lt;name&gt; &lt;json&gt; | show &lt;name&gt;</code></td>
+<td>A named, persisted set of substitution values (credentials, contact details, locale). The corpus expresses this as inline object literals — <code>{ loc: &#39;Thailand&#39;, phone: &#39;+66XXXXXXXXX&#39; }</code> in <code>bulk1.js:19-21</code> — repeated per script per region. The generic need is &quot;store a bundle of values once, load it by name, and never paste PII into a script again&quot;; the job-application contents are one instance of it.</td>
+</tr>
+</tbody></table>
+<h3>G7. Site-agnostic primitives</h3>
+<p>Everything in G1–G6 above was still derived from the scripts that happened to
+need it, so some of it carries domain assumptions. The commands below are
+deliberately <strong>domain-neutral</strong> — they make no assumption about what is being
+scraped, filled, or searched. Several replace duplicated logic that has already
+silently diverged between copies.</p>
+<table>
+<thead>
+<tr>
+<th>PROPOSED</th>
+<th>Args</th>
+<th>Why it is needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>host</code></td>
+<td><code>&lt;url&gt;</code></td>
+<td>URL → <code>{ host, registrable, scheme, path }</code>, normalised by stripping <code>www.</code> and lowercasing. Written out <strong>7 times across 5 files</strong> — <code>harvest_ai_platforms.js:190</code>, <code>mine_list_pages.js:111,116</code>, <code>search_ai_platforms.js:70</code>, <code>search_job_sites.js:109</code>, <code>search_remote_jobs.js:96</code>, and once more in <code>bulk1.js</code>&#39;s classifier. The one primitive every scraper needs first, and nobody has extracted.</td>
+</tr>
+<tr>
+<td><code>dedupe</code></td>
+<td><code>&lt;jsonArray&gt; --by &lt;field|host&gt;</code></td>
+<td>Host-level dedupe for result sets. <code>harvest_ai_platforms.js</code> keys <code>state.platforms</code> by normalised host and reports &quot;Total unique domains&quot;; <code>mine_list_pages.js:111</code> does the same inline. Both exist only to collapse <code>www.</code>/trailing-slash duplicates that search engines return.</td>
+</tr>
+<tr>
+<td><code>filter</code></td>
+<td><code>&lt;jsonArray&gt; --drop-host &lt;re&gt; --keep-host &lt;re&gt; --min-len N --has &lt;re&gt;</code></td>
+<td>A declarative junk filter over scraped rows. <strong>Three</strong> copies of the same idea exist, and they disagree: <code>search_job_sites.js</code> skips 32 hosts, <code>search_remote_jobs.js</code> skips 30, <code>harvest_ai_platforms.js</code> skips 28 — and only 19 of the third list appear in the first. <code>tiktok</code> is skipped remotely but kept by <code>job_sites</code>; <code>snagajob</code>/<code>thenextweb</code>/<code>venturebeat</code> are the reverse; <code>ai_platforms</code> additionally drops <code>upwork</code>, <code>github</code>, <code>amazon</code>. Same intent, three different answers to &quot;what is junk&quot;, so two runs over the same query yield different datasets.</td>
+</tr>
+<tr>
+<td><code>search</code></td>
+<td><code>&lt;query&gt; --limit N --engine &lt;e&gt; --timeout ms</code></td>
+<td><code>search.js</code> exists as a library and is called by 6 scripts, but has <strong>no command</strong>. Every caller re-implements the same surrounding loop: <code>harvest_ai_platforms.js:171-179</code> wraps it in <code>Promise.race</code> with a 45s timeout, tries all queries in a loop, logs progress, and persists after each one. A first-class <code>search</code> command plus <code>state</code> (§G4) would collapse that loop entirely.</td>
+</tr>
+<tr>
+<td><code>emit</code></td>
+<td><code>&lt;json&gt; --format csv|json|ndjson --file &lt;f&gt; --append</code></td>
+<td>Result sink. 11 scripts write output with <code>writeFileSync</code>, and <code>applications.csv</code> / <code>_triage.csv</code> / <code>jobs.json</code> are all hand-rolled CSVs — <code>scrapers/_demo.js:10-27</code> even reimplements an RFC-4180 parser to read them back. Structured output belongs in one place, with a matching reader.</td>
+</tr>
+<tr>
+<td><code>map</code></td>
+<td><code>&lt;jsonArray&gt; --field &lt;f&gt; --expr &lt;js&gt;</code></td>
+<td>Batch field projection. Nearly every script follows the shape <code>for (const res of results) { … pick fields … push row }</code> (<code>harvest_ai_platforms.js:186+</code>, <code>research_shortlist.js</code>, <code>triage_sites.js</code>). A declarative projection removes the loop without removing the control.</td>
+</tr>
+<tr>
+<td><code>paginate</code></td>
+<td><code>&lt;nextSelector&gt; --max N --until-empty</code></td>
+<td>Repeated traversal. <code>mine_list_pages.js</code> pages a listing by walking hosts per page; <code>jobsearch/scroll_list.js</code> does the same with scrolling. Both hand-roll &quot;click next, collect, stop when nothing new&quot;.</td>
+</tr>
+<tr>
+<td><code>assert</code></td>
+<td><code>&lt;css&gt;</code> | <code>--url-matches &lt;re&gt;</code> | <code>--text-matches &lt;re&gt;</code></td>
+<td>Pre/post condition. Scripts repeatedly open with &quot;is the right tab open?&quot; and close with &quot;did it actually work?&quot; — <code>jobsearch/click_apply.js</code> errors out with &quot;no Indeed search-results tab open&quot;, <code>jobsearch/step_job.js</code> exits 3 on a Cloudflare challenge, <code>scripts/indeed-post-all.js:335</code> marks a job failed unless &quot;Not verified&quot; is false.</td>
+</tr>
+<tr>
+<td><code>guard</code></td>
+<td><code>&lt;name&gt; --requires &lt;cmd&gt; --runs &lt;cmd&gt;</code></td>
+<td>Precondition + action + postcondition in one call, so a failed step returns a structured result instead of a raw stack trace. The recurring shape across the fill/submit scripts.</td>
+</tr>
+<tr>
+<td><code>schema</code></td>
+<td><code>&lt;name&gt; --define &lt;json&gt;</code> | <code>--validate &lt;json&gt;</code></td>
+<td>Field validation before writing rows. <code>research_shortlist.js</code> and <code>triage_sites.js</code> both validate harvested records before persisting; a shared schema store would make the contract explicit and reusable across the CSV/JSON outputs.</td>
+</tr>
+<tr>
+<td><code>diff</code></td>
+<td><code>&lt;a&gt; &lt;b&gt; --by &lt;field|host&gt;</code></td>
+<td>Compare two scrapes — how many new hosts appeared since the last run. This is the natural companion to <code>state</code> + <code>dedupe</code> for incremental harvesting, and no script has it.</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>H. Corpus census</h2>
+<p>A tally of Playwright calls across the 94 root scripts, 13 <code>scripts/*.js</code>,
+<code>scrapers/</code>, and <code>jobsearch/</code> — this is the frequency data the priorities in
+§G were ranked by.</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Uses</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>page.evaluate</code></td>
+<td>98</td>
+</tr>
+<tr>
+<td><code>page.waitForTimeout</code></td>
+<td>42</td>
+</tr>
+<tr>
+<td><code>page.locator</code></td>
+<td>34</td>
+</tr>
+<tr>
+<td><code>page.goto</code></td>
+<td>29</td>
+</tr>
+<tr>
+<td><code>page.url</code></td>
+<td>26</td>
+</tr>
+<tr>
+<td><code>page.title</code></td>
+<td>18</td>
+</tr>
+<tr>
+<td><code>page.fill</code></td>
+<td>12</td>
+</tr>
+<tr>
+<td><code>page.on</code></td>
+<td>10</td>
+</tr>
+<tr>
+<td><code>page.click</code></td>
+<td>10</td>
+</tr>
+<tr>
+<td><code>page.screenshot</code></td>
+<td>8</td>
+</tr>
+<tr>
+<td><code>page.waitForSelector</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>page.getByRole</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>page.content</code></td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>page.setInputFiles</code></td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>page.reload</code> / <code>goBack</code> / <code>goForward</code> / <code>type</code> / <code>press</code> / <code>pdf</code></td>
+<td>2–3 each</td>
+</tr>
+<tr>
+<td><code>page.waitForURL</code> / <code>route</code> / <code>mainFrame</code> / <code>getByText</code> / <code>evaluateHandle</code> / <code>addInitScript</code></td>
+<td>1 each</td>
+</tr>
+</tbody></table>
+<p><strong>70 of the ~110 scripts open with <code>chromium.connectOverCDP(...)</code>.</strong> Two
+idioms dominate to the point of being systemic rather than incidental:</p>
+<ul>
+<li>The hard-coded <code>connectOverCDP</code> + <code>pages().find(url.includes(...))</code> preamble
+→ collapsed by <code>findtab</code> + <code>acceptdialogs</code>.</li>
+<li><code>page.evaluate</code> outnumbers every native Playwright call combined
+(98 vs ~52) → the scripts reimplement DOM work that belongs in commands.</li>
+</ul>
+<p><code>headless.js</code> in the repo root is a 16-line stub that launches a bare
+Puppeteer browser and discards <code>url</code>, <code>waitUntil</code> and <code>timeout</code>. It is <strong>not</strong>
+the toolkit described in <code>docs/api.md</code>, which documents a Playwright-based
+<code>launch()</code> returning <code>{ context, page, human, close, screenshot }</code>. Treat
+<code>docs/api.md</code> as aspirational relative to the current file.</p>
+<hr>
+<h2>I. Cross-references</h2>
+<table>
+<thead>
+<tr>
+<th>Doc</th>
+<th>Covers</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="LIVE-DRIVE.md"><code>LIVE-DRIVE.md</code></a></td>
+<td>the live VNC session, <code>npm run vnc</code>, resolution flags, standalone CLI usage, troubleshooting</td>
+</tr>
+<tr>
+<td><a href="api.md"><code>api.md</code></a></td>
+<td>the library API (<code>launch()</code>, <code>human</code>, <code>screenshot</code>)</td>
+</tr>
+<tr>
+<td><a href="cli.md"><code>cli.md</code></a></td>
+<td><code>scripts/live.js</code> CLI reference</td>
+</tr>
+<tr>
+<td><a href="search.md"><code>search.md</code></a></td>
+<td>the <code>search()</code> multi-engine web search</td>
+</tr>
+<tr>
+<td><a href="stealth.md"><code>stealth.md</code></a></td>
+<td>bot-detection patching in <code>stealth.js</code></td>
+</tr>
+<tr>
+<td><a href="troubleshooting.md"><code>troubleshooting.md</code></a></td>
+<td>failure modes</td>
+</tr>
+</tbody></table>
+<p>Build the HTML docs with <code>node build-docs.js</code>.</p>
+
+</body>
+</html>
