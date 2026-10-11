@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Architecture</h1>
+<p>How the four source files fit together.</p>
+<h2>File map</h2>
+<pre><code>                ┌─────────────────────────────────────────────┐
+                │              headless.js                    │
+                │  (CLI entry, launch(), search(), etc.)      │
+                │                                             │
+                │   ┌─────────────┐    ┌──────────────────┐  │
+                │   │  stealth.js │    │    search.js      │  │
+                │   │  (init      │    │  (engine          │  │
+                │   │   script)   │    │   registry +      │  │
+                │   │             │    │   extractors)     │  │
+                │   └─────────────┘    └──────────────────┘  │
+                │         │                      │           │
+                └─────────┼──────────────────────┼───────────┘
+                           ▼                      ▼
+                   addInitScript()         search(context, ...)
+                           │                      │
+                           ▼                      ▼
+               ┌─────────────────────────────────────────────┐
+               │  Playwright (chromium.launchPersistentContext)│
+               │  → real Google Chrome at /usr/bin/google-chrome│
+               │  → persistent profile at ./profile/          │
+               └─────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                           (a real browser)
+</code></pre>
+<h2><code>headless.js</code> — the conductor</h2>
+<ul>
+<li><strong>Entry point</strong> for both the CLI and the library.</li>
+<li>Owns the <code>launchPersistentContext</code> call and the configuration of
+the browser (viewport, locale, UA, launch flags).</li>
+<li><strong>Injects <code>stealth.js</code></strong> as an init script before any page script
+runs.</li>
+<li>Returns a <code>LaunchResult</code> containing the page, the context, the
+<code>human</code> helper, the <code>screenshot</code> helper, and a <code>close()</code> function.</li>
+<li>Exposes a high-level <code>search()</code> that internally calls
+<code>launch()</code> + <code>SEARCH_MODULE.search()</code> + <code>close()</code>.</li>
+<li>Hosts the CLI argument parser and <code>--help</code> text.</li>
+</ul>
+<p>It is <strong>the only file that should be <code>require()</code>d by external
+code</strong>; everything else is implementation detail.</p>
+<h2><code>stealth.js</code> — the patches</h2>
+<ul>
+<li>A single function: <code>STEALTH_INIT()</code>.</li>
+<li>When called inside a page, it patches <code>Navigator.prototype</code>,
+<code>Document.prototype</code>, <code>WebGLRenderingContext.prototype</code>,
+<code>WebGL2RenderingContext.prototype</code>, and a few globals
+(<code>window.chrome</code>, <code>navigator.plugins</code>, etc.).</li>
+<li>Loaded by <code>headless.js</code> via <code>browser.addInitScript(STEALTH_INIT)</code>,
+which means Playwright injects it as a CDP <code>Page.addScriptToEvaluateOnNewDocument</code>
+call. The script runs <strong>before</strong> any user-space JavaScript on every
+page load.</li>
+<li>The function is wrapped in a <code>try/catch</code> so a single bad patch
+can&#39;t break the whole page (and so it never throws during
+fingerprinting tests).</li>
+</ul>
+<h2><code>search.js</code> — the engine registry</h2>
+<ul>
+<li>Each engine is a small object with five fields:<ul>
+<li><code>name</code>: short string id.</li>
+<li><code>buildUrl(query, opts)</code>: returns the search URL.</li>
+<li><code>waitUntil</code>: Playwright <code>waitUntil</code> option.</li>
+<li><code>waitForSelector</code>: optional CSS selector to wait for.</li>
+<li><code>waitMs</code>: extra ms to wait after the selector appears.</li>
+<li><code>healthy(page)</code>: returns false if the page looks blocked.</li>
+<li><code>extract(page)</code>: returns <code>[{title, url, snippet}, ...]</code>.</li>
+</ul>
+</li>
+<li><code>search(context, query, opts)</code>:<ol>
+<li>Iterate through the fallback chain.</li>
+<li>For each engine, open a new page in the context, navigate,
+wait, check <code>healthy()</code>, and <code>extract()</code>.</li>
+<li>If a non-empty result list comes back, return it.</li>
+<li>Otherwise, mark the engine as failed in <code>tried</code> and try the
+next one.</li>
+</ol>
+</li>
+<li><code>formatResults(r)</code>: pretty-printer.</li>
+<li><code>ENGINES</code> and aliases are exported so external code can introspect
+or extend the registry.</li>
+</ul>
+<h2>How the screenshot feature is wired</h2>
+<p><code>headless.js</code> owns the <code>screenshot()</code> helper. It&#39;s a closure over
+the <code>page</code> returned by <code>launch()</code>. The lifecycle:</p>
+<pre><code>launch()  ─►  page = ...                  // open
+          ─►  lastScreenshotPath = null    // init
+          ─►  define screenshot()          // closure
+          ─►  if (opts.screenshot)         // auto-screenshot
+                 screenshot(opts.screenshotPath, {...})
+          ─►  return { ..., screenshot, lastScreenshotPath }
+</code></pre>
+<p><code>lastScreenshotPath</code> is a closure variable, exposed via a <strong>getter</strong>
+on the return object so the value is always live, even after
+destructuring.</p>
+<h2>How the humanization feature is wired</h2>
+<p><code>makeHumanizer(page)</code> is a factory that returns an object with six
+methods. Each one wraps a Playwright call with a delay:</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Wraps</th>
+<th>Adds</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>wait</code></td>
+<td><code>setTimeout</code></td>
+<td>random 50-250ms</td>
+</tr>
+<tr>
+<td><code>pause</code></td>
+<td><code>setTimeout</code></td>
+<td>random 300-900ms</td>
+</tr>
+<tr>
+<td><code>think</code></td>
+<td><code>setTimeout</code></td>
+<td>random 1.2-2.5s</td>
+</tr>
+<tr>
+<td><code>hover</code></td>
+<td><code>page.mouse.move</code></td>
+<td>8-18 sub-steps + 40-180ms dwell</td>
+</tr>
+<tr>
+<td><code>click</code></td>
+<td><code>page.click</code></td>
+<td>hover + 60-220ms pre-click + 20-80ms click delay</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td><code>page.keyboard.type</code></td>
+<td>35-140ms per char, 4% chance of 180-420ms between</td>
+</tr>
+</tbody></table>
+<p>The distributions are intentionally <strong>uniform</strong> (not Gaussian) — a
+cumulative distribution of uniform delays looks more like a real
+human&#39;s variable attention than a centered Gaussian would, because
+humans have asymmetric &quot;I&#39;ll just check this quickly&quot; tails.</p>
+<h2>How the search CLI mode is wired</h2>
+<p><code>headless.js</code>&#39;s CLI parser detects <code>--search &quot;QUERY&quot;</code> early and
+short-circuits to the search block:</p>
+<pre><code>argv has --search?  ─►  launch({ url: &#39;about:blank&#39; })   // no nav
+                     ─►  SEARCH_MODULE.search(ctx, query, opts)
+                     ─►  console.log(formatResults(r))
+                     ─►  if (--search-shot)  navigate + screenshot
+                     ─►  close()
+                     ─►  return  // skip the URL-opening branch
+</code></pre>
+<p>The auto-screenshot for the search mode (<code>--search-shot</code>) re-opens
+the URL of the engine that succeeded so we can capture the results
+page. This means the screenshot is taken <strong>after</strong> extraction
+finishes, ensuring the page is fully rendered.</p>
+<h2>Data flow for a typical session</h2>
+<pre><code class="language-js">const { launch, search } = require(&#39;./headless&#39;);
+
+await launch({ url, screenshot: true, profileDir: &#39;./p&#39; });
+//  │
+//  │  ┌─ chromium.launchPersistentContext(&#39;./p&#39;, { ... })
+//  │  │     │
+//  │  │     ├─ launches /usr/bin/google-chrome with stealth flags
+//  │  │     ├─ injects STEALTH_INIT as addInitScript
+//  │  │     └─ returns BrowserContext + first Page
+//  │  │
+//  │  ├─ if (screenshot) { wait; capture; }
+//  │  │
+//  │  └─ return { page, human, screenshot, close, lastScreenshotPath }
+//  │
+//  └─► user code: human.type(...); human.click(...); etc.
+//  └─► user code: search(ctx, &#39;query&#39;)  → { results, ... }
+//  └─► user code: close()
+</code></pre>
+<h2>Why three files, not one</h2>
+<ul>
+<li><strong><code>stealth.js</code></strong> is logically separate because it runs <strong>inside
+the page context</strong> (via <code>addInitScript</code>) and is largely
+DOM-typed. Keeping it in its own file makes it easy to
+inspect/audit the patches without scrolling past 600 lines of
+Node.js code.</li>
+<li><strong><code>search.js</code></strong> is separate because the engine registry is the
+most likely thing to change (engines come and go, scrapers
+break). Keeping it isolated means you can update just that file
+when an engine&#39;s HTML changes.</li>
+<li><strong><code>headless.js</code></strong> is the orchestrator. It imports the other two
+and the Playwright API.</li>
+</ul>
+<p>If you want to add a fourth engine, add it to <code>search.js</code> only.
+If you want to add a sixth stealth patch, add it to <code>stealth.js</code>
+only. If you want to add a new CLI flag, add it to <code>headless.js</code>
+only.</p>
+
+</body>
+</html>

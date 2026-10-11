@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Screenshots</h1>
+<p>There are two ways to take a screenshot:</p>
+<ol>
+<li><strong>Auto-screenshot</strong> — taken once, right after the page settles,
+when you pass <code>screenshot: true</code> (or <code>--shot</code>) to <code>launch()</code>.</li>
+<li><strong>Ad-hoc screenshot</strong> — taken at any time during the session via
+the <code>screenshot(filePath?, opts?)</code> helper returned by <code>launch()</code>.</li>
+</ol>
+<p>Both paths write to disk and return the <strong>absolute path</strong> of the
+file. Both paths update the <code>lastScreenshotPath</code> getter on the
+launch result.</p>
+<h2>Auto-screenshot (CLI)</h2>
+<pre><code class="language-bash"># Auto-named under ./screenshots/screenshot-&lt;timestamp&gt;.png
+node headless.js --shot https://example.com
+
+# Explicit path
+node headless.js --shot=foo.png https://example.com
+
+# Full scrollable page, not just the viewport
+node headless.js --shot --full-page https://example.com
+
+# JPEG with quality 70
+node headless.js --shot=pic.jpg --screenshot-format=jpeg --screenshot-quality=70 https://example.com
+
+# Wait 3 seconds before snapping (so lazy content settles)
+node headless.js --shot --screenshot-wait=3000 https://example.com
+</code></pre>
+<h2>Auto-screenshot (library)</h2>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+
+const { lastScreenshotPath, close } = await launch({
+  url: &#39;https://example.com&#39;,
+  screenshot: true,                  // turn it on
+  screenshotPath: &#39;home.png&#39;,        // optional
+  screenshotFullPage: true,          // optional
+  screenshotFormat: &#39;png&#39;,           // &#39;png&#39; or &#39;jpeg&#39;
+  screenshotQuality: 80,             // jpeg only
+  screenshotWait: 2000,              // extra settle time
+  screenshotWaitUntil: &#39;networkidle&#39;,
+});
+
+console.log(&#39;saved to&#39;, lastScreenshotPath);
+await close();
+</code></pre>
+<h3>Lifecycle</h3>
+<ol>
+<li><code>launch()</code> navigates to <code>url</code> and resolves the context/page.</li>
+<li>The helper waits for <code>screenshotWaitUntil</code> (default <code>networkidle</code>)
+with a 30s timeout. (If the page never settles, it falls through
+anyway — a half-loaded page is better than no screenshot.)</li>
+<li>The helper waits an additional <code>screenshotWait</code> ms (default 1500).</li>
+<li>The screenshot is captured and saved.</li>
+<li>If anything fails, an error is logged to stderr but <code>launch()</code>
+still resolves with a working browser.</li>
+</ol>
+<h2>Ad-hoc screenshot (library)</h2>
+<pre><code class="language-js">const { launch } = require(&#39;./headless&#39;);
+const { page, screenshot, close } = await launch({ url: &#39;https://example.com&#39; });
+
+// 1. Bare call — auto-name under ./screenshots/
+const p1 = await screenshot();
+
+// 2. Explicit path, infer format from extension
+const p2 = await screenshot(&#39;foo.png&#39;);
+
+// 3. Options object (full Playwright surface)
+const p3 = await screenshot({ path: &#39;bar.jpg&#39;, type: &#39;jpeg&#39;, quality: 60, fullPage: true });
+
+// 4. Path + overrides
+const p4 = await screenshot(&#39;zoom.png&#39;, { clip: { x: 0, y: 0, width: 800, height: 200 } });
+
+// 5. Element screenshot
+const p5 = await screenshot(&#39;logo.png&#39;, { element: page.locator(&#39;header img&#39;) });
+
+await close();
+</code></pre>
+<h2>All supported options</h2>
+<p>All <a href="https://playwright.dev/docs/api/class-page#page-screenshot">Playwright <code>page.screenshot</code> options</a>
+are passed through. The most useful:</p>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>auto</td>
+<td>Absolute or relative output path. Created if missing.</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td><code>&#39;png&#39; | &#39;jpeg&#39;</code></td>
+<td>from extension</td>
+<td>Image format. Stripped from the call if you also pass <code>path</code>&#39;s extension.</td>
+</tr>
+<tr>
+<td><code>quality</code></td>
+<td><code>number</code></td>
+<td><code>80</code></td>
+<td>JPEG quality 0-100. <strong>Automatically stripped for PNG</strong> (Playwright throws).</td>
+</tr>
+<tr>
+<td><code>fullPage</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Capture the entire scrollable page, not just the viewport.</td>
+</tr>
+<tr>
+<td><code>clip</code></td>
+<td><code>{x, y, width, height}</code></td>
+<td>—</td>
+<td>Capture only a sub-region of the page.</td>
+</tr>
+<tr>
+<td><code>element</code></td>
+<td><code>ElementHandle</code></td>
+<td>—</td>
+<td>Screenshot just this element.</td>
+</tr>
+<tr>
+<td><code>omitBackground</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Make the background transparent.</td>
+</tr>
+<tr>
+<td><code>caret</code></td>
+<td><code>&#39;hide&#39; | &#39;initial&#39;</code></td>
+<td>—</td>
+<td>Show or hide the text caret.</td>
+</tr>
+<tr>
+<td><code>animations</code></td>
+<td><code>&#39;allow&#39; | &#39;disabled&#39;</code></td>
+<td><code>&#39;allow&#39;</code></td>
+<td>Whether to run CSS animations.</td>
+</tr>
+<tr>
+<td><code>mask</code></td>
+<td><code>Locator[]</code></td>
+<td>—</td>
+<td>Locators to mask out (draw black boxes).</td>
+</tr>
+</tbody></table>
+<h2>File naming</h2>
+<p>If you don&#39;t pass a path, the helper builds one like:</p>
+<pre><code>./screenshots/screenshot-2026-07-20_15-00-30.png
+./screenshots/screenshot-2026-07-20_15-00-30.jpg   (if format=jpeg)
+</code></pre>
+<p>The <code>./screenshots/</code> directory is created automatically the first
+time you take a screenshot. The <code>screenshot-</code> prefix and timestamp
+sort lexically, so a directory listing puts them in chronological
+order.</p>
+<h2>Where the file ends up</h2>
+<table>
+<thead>
+<tr>
+<th>You pass...</th>
+<th>File ends up at...</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>screenshot(&#39;foo.png&#39;)</code></td>
+<td><code>&lt;cwd&gt;/foo.png</code> (relative to where you ran the script)</td>
+</tr>
+<tr>
+<td><code>screenshot(&#39;/abs/foo.png&#39;)</code></td>
+<td><code>/abs/foo.png</code> (absolute path honored)</td>
+</tr>
+<tr>
+<td><code>screenshot()</code></td>
+<td><code>./screenshots/screenshot-&lt;ts&gt;.&lt;ext&gt;</code></td>
+</tr>
+<tr>
+<td><code>screenshot({ path: &#39;foo.png&#39; })</code></td>
+<td><code>&lt;cwd&gt;/foo.png</code></td>
+</tr>
+</tbody></table>
+<p>The returned path is always absolute, regardless of how it was
+specified.</p>
+<h2>Returned value</h2>
+<p>The <code>screenshot()</code> helper always returns the <strong>absolute path</strong> of
+the file written:</p>
+<pre><code class="language-js">const p = await screenshot(&#39;foo.png&#39;);
+// p is something like &#39;/opt/lampp/htdocs/ServerBrowser/foo.png&#39;
+console.log(&#39;wrote&#39;, p, fs.statSync(p).size, &#39;bytes&#39;);
+</code></pre>
+<p>It also updates the <code>lastScreenshotPath</code> getter on the launch
+result:</p>
+<pre><code class="language-js">const { lastScreenshotPath } = await launch({ ... });
+await screenshot(&#39;a.png&#39;);
+await screenshot(&#39;b.png&#39;);
+console.log(lastScreenshotPath);   // &#39;.../b.png&#39;
+</code></pre>
+<p>The getter means the value is always current, even after
+destructuring, as long as you read it through the object (<code>r.lastScreenshotPath</code>)
+rather than via a destructured local (<code>const { lastScreenshotPath } = r</code>).</p>
+<h2>Errors</h2>
+<p>If a screenshot fails:</p>
+<ul>
+<li>The error is <strong>logged</strong> but doesn&#39;t throw.</li>
+<li>The <code>lastScreenshotPath</code> is <strong>not</strong> updated.</li>
+<li>The browser session continues normally.</li>
+</ul>
+<p>This is intentional: in long-running scripts, a failed screenshot
+shouldn&#39;t take down the whole process.</p>
+
+</body>
+</html>

@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Live Chrome — Drive, Watch &amp; Automate in Real Time</h1>
+<p>This guide explains how to run a <strong>headed, real Google Chrome</strong> (not the bundled
+Chromium) that you can <strong>watch over VNC</strong>, <strong>drive live with Playwright</strong>, and
+<strong>re-run existing stored scripts against — over and over — without the browser
+ever closing on its own</strong>.</p>
+<p>Everything is driven by one npm command and documented here. A copy is also shown
+<strong>on screen</strong> while the session runs (the instructions page loaded in Chrome and
+served at the VNC web port).</p>
+<hr>
+<h2>1. The one command</h2>
+<pre><code class="language-bash">npm run vnc
+</code></pre>
+<p>That single command brings up everything and keeps running (blocking):</p>
+<table>
+<thead>
+<tr>
+<th>Piece</th>
+<th>What it is</th>
+<th>Default address</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Xvfb</code></td>
+<td>virtual display the browser renders onto</td>
+<td><code>:10</code></td>
+</tr>
+<tr>
+<td><strong>real Google Chrome</strong></td>
+<td>headed, persistent profile, DevTools open</td>
+<td>launched by Playwright</td>
+</tr>
+<tr>
+<td><code>x11vnc</code> + <strong>noVNC</strong></td>
+<td>the web view of the screen</td>
+<td><code>http://localhost:6080/novnc/vnc_auto.html</code></td>
+</tr>
+<tr>
+<td>Instructions page</td>
+<td>how to control it, so it&#39;s on screen</td>
+<td><code>http://localhost:6080/</code></td>
+</tr>
+<tr>
+<td><strong>CDP</strong> endpoint</td>
+<td>where Playwright attaches to drive it live</td>
+<td><code>http://127.0.0.1:9222/json/version</code></td>
+</tr>
+</tbody></table>
+<p>While it&#39;s running it prints the viewer URL, the instructions URL and the CDP
+endpoint. Press <strong>Ctrl-C</strong> to stop the session. Stopping the session closes this
+Chrome (there is no other way it closes — scripts and live commands are
+suppressed from closing it).</p>
+<h3>Configuration</h3>
+<p>Every setting is overridable with environment variables:</p>
+<pre><code class="language-bash">WEB_PORT=6080 RFB_PORT=5900 CDP_PORT=9222 DISPLAY_NUM=10 SCREEN=1280x800x24 \
+PROFILE=./profile START_URL=http://localhost:6080/ RESOLUTION=1920x1080 npm run vnc
+</code></pre>
+<p>Or use the shortcut flag directly:</p>
+<pre><code class="language-bash">npm run vnc -- --resolution 1920x1080
+</code></pre>
+<hr>
+<h2>1a. VNC resolution</h2>
+<p>The VNC display size defaults to <code>1280x800</code>. Override it with the
+<code>--resolution</code> flag or the <code>SCREEN</code> / <code>RESOLUTION</code> environment variables.</p>
+<h3>Flag</h3>
+<pre><code class="language-bash">npm run vnc -- --resolution 1920x1080
+</code></pre>
+<p>Both <code>--resolution=WxH</code> and <code>--resolution WxH</code> forms are accepted.</p>
+<h3>Environment variables</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>SCREEN</code></td>
+<td>Full Xvfb screen spec <code>WIDTHxHEIGHTxDEPTH</code></td>
+<td><code>1280x800x24</code></td>
+</tr>
+<tr>
+<td><code>RESOLUTION</code></td>
+<td>Shorthand <code>WIDTHxHEIGHT</code>; maps to <code>SCREEN=WxHx24</code></td>
+<td>(empty → <code>SCREEN</code> used)</td>
+</tr>
+</tbody></table>
+<p>The flag wins if both are provided: <code>--resolution</code> sets <code>SCREEN</code> internally.</p>
+<h3>Examples</h3>
+<pre><code class="language-bash"># 1080p
+SCREEN=1920x1080x24 npm run vnc
+
+# 1440p (same as --resolution)
+RESOLUTION=2560x1440 npm run vnc
+
+# Full HD via flag
+npm run vnc -- --resolution 2560x1440
+</code></pre>
+<p>The viewport and window size inside Chrome are aligned to the same resolution.
+<code>scripts/vnc-server.sh</code> derives the Chrome window size from the Xvfb screen and
+forwards it to the driver, so a single flag keeps the virtual screen, the Chrome
+window and the page viewport in agreement:</p>
+<pre><code class="language-bash"># Verify end to end (Xvfb + Chrome + CDP, exits 0 on success)
+bash scripts/smoke-test-vnc-resolution.sh 1440 900
+</code></pre>
+<h3>Browser selection and other <code>npm run vnc</code> flags</h3>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>--resolution WxH</code></td>
+<td>Xvfb screen + Chrome window/viewport</td>
+</tr>
+<tr>
+<td><code>--browser chrome|chromium|firefox</code></td>
+<td>Which browser the driver launches (default <code>chrome</code>)</td>
+</tr>
+<tr>
+<td><code>--local-chrome [--local-chrome-port N]</code></td>
+<td>Attach to an already-running Chrome instead of launching one (§9)</td>
+</tr>
+<tr>
+<td><code>--cdp-port N</code>, <code>--profile PATH</code>, <code>--start-url URL</code></td>
+<td>Passed straight through to the driver</td>
+</tr>
+</tbody></table>
+<p>Run <code>npm run vnc -- --help</code> for the full list. All of them also work as
+environment variables (<code>BROWSER</code>, <code>LOCAL_CHROME</code>, <code>LOCAL_CHROME_PORT</code>, …).</p>
+<hr>
+<h2>2. Two ways to drive it live</h2>
+<p>The browser exposes Chrome DevTools Protocol on <strong>port 9222</strong>. Playwright 1.61.1
+is already installed globally on this machine, so any Node process can attach.</p>
+<h3>2a. Raw Playwright (best for your AI model / custom scripts)</h3>
+<pre><code class="language-js">const { chromium } = require(&#39;playwright&#39;);
+
+const browser = await chromium.connectOverCDP(&#39;http://127.0.0.1:9222&#39;);
+const page = browser.contexts()[0].pages()[0];   // the visible tab
+
+await page.goto(&#39;https://example.com&#39;);
+
+// Read data
+const text  = await page.evaluate(() =&gt; document.body.innerText);
+const html  = await page.content();
+const title = await page.title();
+
+// Act (all visible live in the VNC view)
+await page.click(&#39;a[href=&quot;/login&quot;]&#39;);
+await page.fill(&#39;input[name=&quot;email&quot;]&#39;, &#39;me@x.com&#39;);
+await page.fill(&#39;input[name=&quot;password&quot;]&#39;, &#39;hunter2&#39;);
+await page.click(&#39;button[type=&quot;submit&quot;]&#39;);
+await page.waitForSelector(&#39;.dashboard&#39;);
+console.log(await page.evaluate(() =&gt; document.body.innerText));
+
+await page.screenshot({ path: &#39;/tmp/dash.png&#39;, fullPage: true });
+// NOTE: never call browser.close() unless you want to end the session.
+</code></pre>
+<p>Because <code>connectOverCDP</code> attaches to the <em>already-running</em> Chrome, your logins,
+cookies and the visible window all persist. An AI model can read the page</p>
+<h3>2b. One-liner CLI: <code>npm run live</code></h3>
+<p>For quick commands from a shell or an AI, there is a CLI that attaches, acts
+and prints results as JSON.</p>
+<pre><code class="language-bash">npm run live -- goto https://example.com
+npm run live -- dump                     # structured inputs/buttons/text
+npm run live -- text                     # visible text
+npm run live -- click &#39;a[href=&quot;/login&quot;]&#39;
+npm run live -- fill &#39;input[name=email]&#39; you@x.com
+npm run live -- screenshot /tmp/shot.png
+npm run live -- eval &quot;document.querySelectorAll(&#39;a&#39;).length&quot;
+</code></pre>
+<h4>Command reference</h4>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>goto</code></td>
+<td><code>&lt;url&gt;</code></td>
+<td>navigate active tab</td>
+</tr>
+<tr>
+<td><code>reload</code> / <code>back</code> / <code>forward</code></td>
+<td>—</td>
+<td>navigate</td>
+</tr>
+<tr>
+<td><code>wait</code></td>
+<td><code>&lt;ms&gt;</code></td>
+<td>sleep</td>
+</tr>
+<tr>
+<td><code>waitfor</code></td>
+<td><code>&lt;css&gt;</code> <code>[ms]</code></td>
+<td>wait for an element</td>
+</tr>
+<tr>
+<td><code>fill</code></td>
+<td><code>&lt;css&gt;</code> <code>&lt;text&gt;</code></td>
+<td>set an input value</td>
+</tr>
+<tr>
+<td><code>type</code></td>
+<td><code>&lt;css&gt;</code> <code>&lt;text&gt;</code> <code>[delayMs]</code></td>
+<td>type into an element</td>
+</tr>
+<tr>
+<td><code>click</code></td>
+<td><code>&lt;css&gt;</code></td>
+<td>click an element</td>
+</tr>
+<tr>
+<td><code>press</code></td>
+<td><code>&lt;css&gt;</code> <code>&lt;key&gt;</code></td>
+<td>press a key in an element (<code>Enter</code>, <code>Tab</code>, …)</td>
+</tr>
+<tr>
+<td><code>keyboard</code></td>
+<td><code>&lt;key&gt;</code></td>
+<td>global key press on the page</td>
+</tr>
+<tr>
+<td><code>clear</code></td>
+<td><code>&lt;css&gt;</code></td>
+<td>empty an input</td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td>—</td>
+<td>print current URL</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td>—</td>
+<td>print page title</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td>—</td>
+<td><strong>read</strong>: page visible text</td>
+</tr>
+<tr>
+<td><code>html</code></td>
+<td>—</td>
+<td><strong>read</strong>: full page HTML</td>
+</tr>
+<tr>
+<td><code>dump</code></td>
+<td>—</td>
+<td><strong>read</strong>: inputs, buttons, links, text in one shot</td>
+</tr>
+<tr>
+<td><code>eval</code></td>
+<td><code>&lt;js&gt;</code></td>
+<td><strong>read/run</strong>: execute JS in the page, return result</td>
+</tr>
+<tr>
+<td><code>screenshot</code></td>
+<td><code>&lt;file.png&gt;</code></td>
+<td>save a screenshot</td>
+</tr>
+<tr>
+<td><code>tabs</code></td>
+<td>—</td>
+<td>list all open tabs</td>
+</tr>
+<tr>
+<td><code>tab</code></td>
+<td><code>&lt;index&gt;</code></td>
+<td>switch the &quot;active&quot; tab</td>
+</tr>
+<tr>
+<td><code>close-tab</code></td>
+<td><code>[index or css]</code></td>
+<td>close a tab (refuses to close the last one)</td>
+</tr>
+<tr>
+<td><code>db-connect</code></td>
+<td><code>[path]</code></td>
+<td>connect to DuckDB datastore</td>
+</tr>
+<tr>
+<td><code>db-query</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>run SELECT and return rows</td>
+</tr>
+<tr>
+<td><code>db-exec</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>run INSERT/UPDATE/CREATE etc.</td>
+</tr>
+<tr>
+<td><code>db-tables</code></td>
+<td>—</td>
+<td>list tables</td>
+</tr>
+<tr>
+<td><code>db-select</code></td>
+<td><code>&lt;table&gt; [whereJson]</code></td>
+<td>query table with optional where</td>
+</tr>
+<tr>
+<td><code>db-insert</code></td>
+<td><code>&lt;table&gt; &lt;json&gt;</code></td>
+<td>insert row into table</td>
+</tr>
+<tr>
+<td><code>db-create-table</code></td>
+<td><code>&lt;table&gt; &lt;cols&gt;</code></td>
+<td>create table if not exists</td>
+</tr>
+<tr>
+<td><code>db-status</code></td>
+<td>—</td>
+<td>show datastore status</td>
+</tr>
+<tr>
+<td><code>db-close</code></td>
+<td>—</td>
+<td>close datastore connection</td>
+</tr>
+<tr>
+<td><code>status-set</code></td>
+<td><code>&lt;text&gt;</code></td>
+<td>set current action text on VNC overlay</td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td><code>&lt;0-100&gt;</code></td>
+<td>set progress bar on VNC overlay</td>
+</tr>
+<tr>
+<td><code>notify</code></td>
+<td><code>&lt;text&gt;</code></td>
+<td>show notification popup on VNC overlay</td>
+</tr>
+<tr>
+<td><code>pause</code></td>
+<td>—</td>
+<td>pause agent execution (VNC overlay button)</td>
+</tr>
+<tr>
+<td><code>resume</code></td>
+<td>—</td>
+<td>resume agent execution</td>
+</tr>
+</tbody></table>
+<h4>2d. Multitab JSON-lines protocol</h4>
+<p><code>npm run live -- --stdin</code> accepts one JSON object per line (or a space-separated
+command) and processes them sequentially, emitting one JSON result per line.</p>
+<pre><code class="language-bash">printf &#39;%s\n&#39; \
+  &#39;{&quot;cmd&quot;:&quot;goto&quot;,&quot;args&quot;:[&quot;https://example.com/login&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;dump&quot;}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;fill&quot;,&quot;args&quot;:[&quot;input[name=email]&quot;,&quot;me@x.com&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;click&quot;,&quot;args&quot;:[&quot;button[type=submit]&quot;]}&#39; |
+npm run live -- --stdin
+</code></pre>
+<h3>Agent tab commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>agent-tab-create</code></td>
+<td><code>&lt;name&gt; [contextId]</code></td>
+<td>Create a new agent tab (max 10 concurrent). Returns <code>{id, url, title, contextId}</code>.</td>
+</tr>
+<tr>
+<td><code>agent-tab-switch</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>Make the named agent tab active.</td>
+</tr>
+<tr>
+<td><code>agent-tab-close</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>Close the named agent tab.</td>
+</tr>
+<tr>
+<td><code>agent-tabs</code></td>
+<td>—</td>
+<td>List every open tab with the agent id it is bound to.</td>
+</tr>
+</tbody></table>
+<h3>Context commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>context-new</code></td>
+<td>—</td>
+<td>Create a new isolated browser context. Returns <code>{contextId}</code>.</td>
+</tr>
+<tr>
+<td><code>context-use</code></td>
+<td><code>&lt;id&gt;</code></td>
+<td>Switch to an existing context by ID.</td>
+</tr>
+<tr>
+<td><code>contexts</code></td>
+<td>—</td>
+<td>List all registered context IDs.</td>
+</tr>
+</tbody></table>
+<h3>Max tabs guard</h3>
+<p>No more than <strong>10 concurrent agent tabs</strong> can exist at any time. Attempting to
+create an 11th tab returns an error:</p>
+<pre><code class="language-json">{&quot;cmd&quot;:&quot;agent-tab-create&quot;,&quot;ok&quot;:false,&quot;error&quot;:&quot;max concurrent tabs reached (10)&quot;}
+</code></pre>
+<h3><code>--agent-id &lt;id&gt;</code> scoping</h3>
+<p><code>--agent-id</code> scopes a command (or a whole <code>--stdin</code> session) to one agent&#39;s tab.
+The flag may appear before or after the command name:</p>
+<pre><code class="language-bash">npm run live -- --agent-id scraper-1 goto https://example.com
+npm run live -- goto https://example.com --agent-id scraper-1
+</code></pre>
+<p>Because each CLI invocation is a <strong>separate process</strong>, the in-memory tab registry
+is empty every time. Tabs are therefore stamped with a marker
+(<code>window.__sb_agent_id</code>, mirrored into the tab&#39;s <code>localStorage</code>), and a later
+process rediscovers the tab by that marker before creating a duplicate. Inspect
+the wiring with <code>agent-tabs</code>.</p>
+<p>Contexts (<code>context-new</code> / <code>context-use</code>) are per-process by nature — create and
+use them inside a single <code>--stdin</code> session.</p>
+<h3>Examples</h3>
+<pre><code class="language-bash"># Create and switch between two agent tabs
+printf &#39;%s\n&#39; \
+  &#39;{&quot;cmd&quot;:&quot;agent-tab-create&quot;,&quot;args&quot;:[&quot;tab-a&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;goto&quot;,&quot;args&quot;:[&quot;https://a.example.com&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;agent-tab-create&quot;,&quot;args&quot;:[&quot;tab-b&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;agent-tab-switch&quot;,&quot;args&quot;:[&quot;agent-1&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;title&quot;}&#39; |
+npm run live -- --stdin
+
+# New context for isolated cookies
+printf &#39;%s\n&#39; \
+  &#39;{&quot;cmd&quot;:&quot;context-new&quot;}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;goto&quot;,&quot;args&quot;:[&quot;https://example.com&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;context-use&quot;,&quot;args&quot;:[&quot;ctx-1&quot;]}&#39; |
+npm run live -- --stdin
+</code></pre>
+<blockquote>
+<p><strong>JSON-lines mode</strong> is ideal for an AI to issue many steps and read every answer:</p>
+<pre><code class="language-bash">printf &#39;%s\n&#39; \
+  &#39;{&quot;cmd&quot;:&quot;goto&quot;,&quot;args&quot;:[&quot;https://example.com/login&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;dump&quot;}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;fill&quot;,&quot;args&quot;:[&quot;input[name=email]&quot;,&quot;me@x.com&quot;]}&#39; \
+  &#39;{&quot;cmd&quot;:&quot;click&quot;,&quot;args&quot;:[&quot;button[type=submit]&quot;]}&#39; |
+npm run live -- --stdin
+</code></pre>
+</blockquote>
+<h4>2c. Datastore commands</h4>
+<p><code>npm run live</code> exposes a DuckDB-backed datastore directly from the CLI.
+No separate server is needed — the database is a local <code>.duckdb</code> file.</p>
+<p><strong>No browser required.</strong> <code>db-*</code> and <code>tunnel-*</code> commands are local, so they run
+even when no live Chrome session is up (the CDP connection is skipped entirely):</p>
+<pre><code class="language-bash">npm run live -- db-status        # works with nothing else running
+</code></pre>
+<h3>Environment variable</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DATASTORE_PATH</code></td>
+<td>Path to the DuckDB file</td>
+<td><code>datastore/browser.duckdb</code></td>
+</tr>
+</tbody></table>
+<h3>Command reference</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>db-connect</code></td>
+<td><code>[path]</code></td>
+<td>Open (or create) the DuckDB file. Uses <code>DATASTORE_PATH</code> if <code>path</code> omitted.</td>
+</tr>
+<tr>
+<td><code>db-status</code></td>
+<td><code>[path]</code></td>
+<td>Show the database path and table list.</td>
+</tr>
+<tr>
+<td><code>db-close</code></td>
+<td>—</td>
+<td>Close the connection.</td>
+</tr>
+<tr>
+<td><code>db-tables</code></td>
+<td>—</td>
+<td>List all tables in the database.</td>
+</tr>
+<tr>
+<td><code>db-query</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>Run a SELECT and return matching rows.</td>
+</tr>
+<tr>
+<td><code>db-exec</code></td>
+<td><code>&lt;sql&gt;</code></td>
+<td>Run any non-SELECT SQL (INSERT, UPDATE, CREATE TABLE, etc.).</td>
+</tr>
+<tr>
+<td><code>db-create-table</code></td>
+<td><code>&lt;table&gt; &lt;cols&gt;</code></td>
+<td>Create a table if it does not exist. Columns may be typed (<code>id INTEGER, name TEXT</code>) or bare (<code>id, name</code>), in which case <code>TEXT</code> is assumed.</td>
+</tr>
+<tr>
+<td><code>db-select</code></td>
+<td><code>&lt;table&gt; [whereJson]</code></td>
+<td>Query a table; <code>whereJson</code> is <code>{&quot;col&quot;:&quot;val&quot;}</code>.</td>
+</tr>
+<tr>
+<td><code>db-insert</code></td>
+<td><code>&lt;table&gt; &lt;json&gt;</code></td>
+<td>Insert a row; <code>json</code> is <code>{&quot;col&quot;:&quot;val&quot;,...}</code>.</td>
+</tr>
+<tr>
+<td><code>db-update</code></td>
+<td><code>&lt;table&gt; &lt;setJson&gt; &lt;whereJson&gt;</code></td>
+<td>Update rows matching <code>whereJson</code>. Refuses an empty where clause.</td>
+</tr>
+<tr>
+<td><code>db-delete</code></td>
+<td><code>&lt;table&gt; &lt;whereJson&gt;</code></td>
+<td>Delete rows matching <code>whereJson</code>. Refuses an empty where clause.</td>
+</tr>
+</tbody></table>
+<p>Every command answers with a single JSON line: <code>{&quot;cmd&quot;:…,&quot;ok&quot;:true,&quot;result&quot;:…}</code>
+or <code>{&quot;cmd&quot;:…,&quot;ok&quot;:false,&quot;error&quot;:&quot;…&quot;}</code> — SQL errors are returned, never thrown.</p>
+<h3>Examples</h3>
+<pre><code class="language-bash"># Open (creates file if absent)
+npm run live -- db-connect
+
+# Create a table
+npm run live -- db-create-table products &quot;id INTEGER, name TEXT, price REAL&quot;
+
+# Insert a row
+npm run live -- db-insert products &#39;{&quot;id&quot;:1,&quot;name&quot;:&quot;Widget&quot;,&quot;price&quot;:9.99}&#39;
+
+# Select all rows
+npm run live -- db-select products
+
+# Select with a where clause
+npm run live -- db-select products &#39;{&quot;id&quot;:1}&#39;
+
+# Update
+npm run live -- db-update products &#39;{&quot;price&quot;:8.99}&#39; &#39;{&quot;id&quot;:1}&#39;
+
+# Raw SQL
+npm run live -- db-query &quot;SELECT * FROM products WHERE price &gt; 5&quot;
+
+# List tables
+npm run live -- db-tables
+
+# Close when done
+npm run live -- db-close
+</code></pre>
+<hr>
+<h2>3. Run your EXISTING stored scripts — over and over, never closing</h2>
+<p>Your stored scripts (e.g. <code>batch.js</code>, <code>dataforthai.js</code>, <code>harvest_ai_platforms.js</code>)
+normally call <code>chromium.launch()</code> themselves, spinning up throwaway browsers and
+closing them. To run them <strong>on the live, visible instance</strong> instead — repeatedly,
+keeping logins intact — use:</p>
+<pre><code class="language-bash">npm run live-run -- batch.js codes.csv
+npm run live-run -- dataforthai.js some-arg
+npm run live-run -- &lt;any-stored-script.js&gt; [script args...]
+</code></pre>
+<p>What <code>live-run</code> does:</p>
+<ol>
+<li>It <strong>intercepts</strong> the stored script&#39;s <code>chromium.launch()</code> / <code>launchPersistentContext()</code>
+and redirects the call to attach to the running browser via <code>connectOverCDP</code>.</li>
+<li>It <strong>suppresses</strong> every <code>browser.close()</code> / <code>context.close()</code> (with a log line),
+so the same instance — and its cookies, logins and visible window — survives
+every run.</li>
+<li>It passes through the script&#39;s own argv unchanged, so the script sees exactly
+the arguments it expects (<code>node dataforthai.js some-arg</code>).</li>
+<li>Run it as many times as you like; each run acts on the same live Chrome while
+you watch on VNC, and nothing is torn down.</li>
+</ol>
+<blockquote>
+<p><strong>Logins during a run:</strong> because the browser is headed and on VNC, you (or the
+AI) can complete a CAPTCHA/login by hand in the VNC viewer mid-run — the script
+keeps using the same profile, so the login sticks.</p>
+</blockquote>
+<hr>
+<h2>4. Scraping commands</h2>
+<p><code>npm run live</code> exposes page-level scraping commands that run entirely in the
+browser via <code>page.evaluate(...)</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>save-page-json</code></td>
+<td><code>[path]</code></td>
+<td>Save structured page data (url, title, html, text, links, images, inputs) to a JSON file. Returns data even without a path.</td>
+</tr>
+<tr>
+<td><code>extract-css</code></td>
+<td><code>&lt;selector&gt;</code></td>
+<td>Return matching elements: <code>{tag, text, html, href, src}</code> for each.</td>
+</tr>
+<tr>
+<td><code>extract-regex</code></td>
+<td><code>&lt;pattern&gt; [flags]</code></td>
+<td>Run a regex against <code>document.body.innerText</code>. Returns <code>{pattern, flags, matches}</code>.</td>
+</tr>
+<tr>
+<td><code>extract-table</code></td>
+<td><code>&lt;selector&gt;</code></td>
+<td>Parse <code>&lt;table&gt;</code> elements into <code>{headers, rows}</code> arrays. Defaults to <code>table</code>.</td>
+</tr>
+<tr>
+<td><code>extract-links</code></td>
+<td><code>[filter]</code></td>
+<td>Return all links, optionally filtered by substring match on <code>href</code> or <code>text</code>.</td>
+</tr>
+<tr>
+<td><code>extract-images</code></td>
+<td>—</td>
+<td>Return all <code>&lt;img&gt;</code> elements with <code>{src, alt, width, height}</code>.</td>
+</tr>
+<tr>
+<td><code>screenshot-element</code></td>
+<td><code>&lt;selector&gt; &lt;path&gt;</code></td>
+<td>Screenshot a single element to a PNG file.</td>
+</tr>
+<tr>
+<td><code>pdf</code></td>
+<td><code>&lt;path&gt;</code></td>
+<td>Print the current page to a PDF file.</td>
+</tr>
+</tbody></table>
+<h3>Examples</h3>
+<pre><code class="language-bash"># Structured page dump, saved to file
+npm run live -- save-page-json /tmp/page.json
+
+# All links matching a filter
+npm run live -- extract-links example.com
+
+# Table as JSON arrays
+npm run live -- extract-table &#39;.results-table&#39;
+
+# Images with dimensions
+npm run live -- extract-images
+
+# Regex: all email addresses on the page
+npm run live -- extract-regex &#39;[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}&#39; &#39;g&#39;
+
+# Element screenshot
+npm run live -- screenshot-element &#39;.hero&#39; /tmp/hero.png
+
+# PDF
+npm run live -- pdf /tmp/page.pdf
+</code></pre>
+<h2>5. Reading data</h2>
+<ul>
+<li><strong><code>npm run live -- dump</code></strong> returns a JSON object with <code>url</code>, <code>title</code>, <code>inputs</code>,
+<code>buttons</code>, <code>links</code> and the first ~4000 chars of visible <code>text</code> — the fastest way
+for an AI to understand a page.</li>
+<li><strong><code>npm run live -- text</code></strong> returns the raw visible text.</li>
+<li><strong><code>npm run live -- html</code></strong> returns full page HTML.</li>
+<li><strong><code>npm run live -- eval &#39;&lt;expression&gt;&#39;</code></strong> runs arbitrary JS in the page and
+returns the value — e.g. collect a table, an array of product links, JSON from a
+global variable, etc.</li>
+<li>Each <code>live</code> result is printed as one JSON line, easy for an AI to parse.</li>
+</ul>
+<h2>6. Pause / resume</h2>
+<p>The VNC overlay shows <strong>Pause</strong> and <strong>Resume</strong> buttons. An automation agent
+(or a live command) can trigger the same behaviour programmatically.</p>
+<h3>Commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>pause</code></td>
+<td>Raise the paused flag (the HUD button flips to <strong>Resume</strong>) and block until <code>resume</code> is issued or the timeout fires.</td>
+</tr>
+<tr>
+<td><code>resume</code></td>
+<td>Release a paused agent.</td>
+</tr>
+<tr>
+<td><code>overlay-state</code></td>
+<td>Report whether the HUD is installed plus its live state (text, progress, paused).</td>
+</tr>
+</tbody></table>
+<p>The flag lives in the page&#39;s <code>localStorage</code>, so it survives navigation and is
+visible to every tab. A human releases the agent by clicking <strong>Resume</strong> on the
+VNC screen; another process can release it with <code>npm run live -- resume</code>.</p>
+<h3>Environment variable</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PAUSE_TIMEOUT_MS</code></td>
+<td>Maximum time to wait before auto-resuming (0 = disabled)</td>
+<td><code>30000</code></td>
+</tr>
+</tbody></table>
+<h3>Examples</h3>
+<pre><code class="language-bash"># Pause (blocks until resume or timeout)
+npm run live -- pause
+
+# Resume from another shell or agent
+npm run live -- resume
+
+# Disable auto-resume entirely
+PAUSE_TIMEOUT_MS=0 npm run live -- pause
+
+# Agent-initiated pause that self-releases after 3s
+PAUSE_TIMEOUT_MS=3000 npm run live -- pause
+# → {&quot;cmd&quot;:&quot;pause&quot;,&quot;ok&quot;:true,&quot;result&quot;:{&quot;paused&quot;:true,&quot;autoResumed&quot;:true,&quot;waitedMs&quot;:3072,&quot;timeoutMs&quot;:3000}}
+
+# What does the HUD think?
+npm run live -- overlay-state
+</code></pre>
+<blockquote>
+<p>The HUD auto-hides after <code>OVERLAY_AUTO_HIDE_SECONDS</code> of inactivity (default 10,
+<code>0</code> disables). Set it when launching: <code>OVERLAY_AUTO_HIDE_SECONDS=0 npm run vnc</code>.</p>
+</blockquote>
+<hr>
+<h2>7. Watching / interacting on VNC</h2>
+<ul>
+<li>Open <strong><code>http://localhost:6080/novnc/vnc_auto.html</code></strong> to see the live screen.</li>
+<li>Use the <strong><code>http://localhost:6080/</code></strong> instructions page as a landing/reference.</li>
+<li>Click and type directly in the VNC viewer to operate the browser by hand
+(logins, CAPTCHAs, approvals) while automation continues.</li>
+</ul>
+<hr>
+<h2>8. Security notes &amp; tips</h2>
+<ul>
+<li>Everything binds to <strong>localhost</strong> by default — safe over an SSH tunnel
+(e.g. <code>ssh -L 6080:localhost:6080 -L 9222:localhost:9222 user@host</code>).</li>
+<li>The VNC/websockify path has <strong>no password</strong> (<code>-nopw</code>). Only expose it publicly
+if you add TLS/<code>-password</code> and bind beyond loopback deliberately.</li>
+<li>Chrome runs with <code>--no-sandbox</code> because the process is <code>root</code> (VPS context).</li>
+<li>The persistent profile is <strong><code>profile/</code></strong> — this is where cookies/logins live
+between sessions.</li>
+<li><strong>Anti-bot detection:</strong> The VNC Chrome includes <code>--disable-blink-features=AutomationControlled</code>
+and an <code>addInitScript</code> stealth layer to suppress <code>navigator.webdriver</code> and other
+automation tells. When automating, add 2–5s delays between actions. If Cloudflare
+throws a CAPTCHA, pause and solve it manually via VNC — see
+<a href="stealth.md">stealth.md</a> § &quot;Cloudflare Turnstile / CAPTCHA handling&quot;.</li>
+</ul>
+<hr>
+<h2>9. Connect to your local Chrome (instead of VNC server)</h2>
+<p>If you already have a real Google Chrome running locally with remote debugging
+enabled, you can skip VNC entirely and attach directly over CDP.</p>
+<h3>Auto-detect local Chrome</h3>
+<p>Chrome exposes CDP on common ports: <strong>9222, 9223, 9224</strong>.</p>
+<pre><code class="language-bash"># Start Chrome manually once (or check it is already running):
+google-chrome --remote-debugging-port=9222
+
+# Verify it is listening:
+curl http://127.0.0.1:9222/json/version
+</code></pre>
+<h3>Attach from scripts</h3>
+<p>Use <code>scripts/connect.js</code> exactly like <code>live.js</code>, but point it at your running
+Chrome:</p>
+<pre><code class="language-bash">CDP_URL=http://127.0.0.1:9222 node scripts/connect.js dump
+node scripts/connect.js goto https://example.com
+</code></pre>
+<p>This is the same connection path as <code>connect.js</code> (remote Chrome over CDP).
+<code>connect.js</code> never launches a browser — it only attaches to an existing CDP
+endpoint.</p>
+<h3>Programmatic attach (local Chrome module)</h3>
+<p><code>scripts/local-chrome.js</code> provides a small helper that auto-detects a running
+Chrome and returns a Playwright browser handle:</p>
+<pre><code class="language-js">const { connectLocalChrome } = require(&#39;./scripts/local-chrome.js&#39;);
+
+const { browser } = await connectLocalChrome(9222);
+const page = browser.contexts()[0].pages()[0];
+
+await page.goto(&#39;https://example.com&#39;);
+console.log(await page.evaluate(() =&gt; document.body.innerText));
+</code></pre>
+<p><code>connectLocalChrome(port)</code> probes <code>http://127.0.0.1:&lt;port&gt;/json/version</code>,
+throws a helpful error if nothing is listening, and returns
+<code>{ browser, port, url, info }</code>.</p>
+<h3>Relationship to scripts/connect.js</h3>
+<ul>
+<li><code>connect.js</code> is a full CLI for any remote CDP endpoint: navigation, forms,
+<code>dump</code>, the scraping commands (§4) and the overlay commands (§6).</li>
+<li><code>scripts/local-chrome.js</code> is a lower-level attach helper with auto-detect,
+a CLI (<code>detect</code> / <code>attach</code>) and clearer errors for local Chrome.</li>
+<li>Both use <code>chromium.connectOverCDP()</code> under the hood. Neither launches or
+closes the browser.</li>
+</ul>
+<h3>Launching a local Chrome for this workflow</h3>
+<pre><code class="language-bash"># Start a normal Chrome with a DevTools port (own profile, runs alongside yours)
+npm run local-chrome                     # CDP on 9222
+CDP_PORT=9444 npm run local-chrome       # or a different port
+
+# Is one already running?
+node scripts/local-chrome.js detect      # auto-detects 9222-9224 (or LOCAL_CHROME_PORTS)
+node scripts/local-chrome.js attach 9222
+
+# Drive it through the VNC stack (Xvfb + x11vnc + noVNC, but no browser launch)
+npm run vnc -- --local-chrome --local-chrome-port 9222
+</code></pre>
+<p>The driver injects the stealth layer and the HUD into the attached browser
+(best-effort: pages that are already open keep whatever they had), prints
+<code>[driver] attached to local Chrome …</code>, and <strong>never closes your browser</strong> on exit.</p>
+<hr>
+<h2>10. Tunnel service (named tunnel + password)</h2>
+<p>A tunnel exposes a local port (noVNC at 6080, the app you are testing, …) as a
+shareable URL, with <strong>password protection enforced locally</strong> rather than by the
+tunnel provider.</p>
+<h3>How it works</h3>
+<pre><code>internet → provider tunnel → [password gate :6199] → your local target
+</code></pre>
+<p><code>scripts/tunnel.js</code> starts <code>scripts/tunnel-auth-proxy.js</code>, a small HTTP/WebSocket
+proxy that rejects anything without the password, and points the provider tunnel
+at <strong>that</strong> proxy — never at the raw VNC/CDP port.</p>
+<h3>Commands</h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Args</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tunnel-create &lt;name&gt; [password] [provider]</code></td>
+<td>start the gate + tunnel</td>
+<td>provider defaults to <code>cloudflare</code></td>
+</tr>
+<tr>
+<td><code>tunnel-route &lt;target&gt; [provider]</code></td>
+<td>repoint the gate at a new local target</td>
+<td></td>
+</tr>
+<tr>
+<td><code>tunnel-url [provider]</code></td>
+<td>print the shareable URL and auth requirements</td>
+<td></td>
+</tr>
+<tr>
+<td><code>tunnel-status [provider]</code></td>
+<td>show running state as JSON (pids, target, url)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>tunnel-stop [provider]</code></td>
+<td>stop the tunnel, and the gate when nothing is left running</td>
+<td></td>
+</tr>
+</tbody></table>
+<p>All five are also available through <code>npm run live -- tunnel-*</code> and
+<code>node standalone/index.js tunnel …</code>. They are local commands: <strong>no browser
+session required.</strong> State lives in <code>datastore/tunnel-state.json</code> (mode <code>0600</code>),
+so <code>tunnel-url</code> works from a different process minutes later.</p>
+<h3>Providers</h3>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Needs</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>cloudflare</code></td>
+<td><code>cloudflared</code> on PATH</td>
+<td>Real quick tunnel; the URL is read from the process output</td>
+</tr>
+<tr>
+<td><code>ngrok</code></td>
+<td><code>ngrok</code> on PATH</td>
+<td>URL is read from the local ngrok API (<code>:4040</code>)</td>
+</tr>
+<tr>
+<td><code>custom</code></td>
+<td>nothing</td>
+<td>Bring your own tunnel: set <code>TUNNEL_CUSTOM_URL</code></td>
+</tr>
+</tbody></table>
+<p>If the binary is missing you get an explicit error with install instructions —
+<strong>no URL is ever invented</strong>:</p>
+<pre><code class="language-json">{&quot;cmd&quot;:&quot;tunnel-create&quot;,&quot;ok&quot;:false,&quot;error&quot;:&quot;cloudflared not found (looked for \&quot;cloudflared\&quot; on PATH). Install it: …&quot;}
+</code></pre>
+<h3>Password protection</h3>
+<p>A password is required at creation. Every request to the gate must prove it:</p>
+<pre><code class="language-bash">curl -u any:SECRET http://127.0.0.1:6199/            # HTTP Basic
+curl &#39;http://127.0.0.1:6199/?pw=SECRET&#39;              # query form (noVNC/WebSockets)
+</code></pre>
+<ul>
+<li>HTTP Basic or <code>?pw=</code> (browsers cannot set headers on a WebSocket handshake).</li>
+<li>A successful <code>?pw=</code> request sets an <code>HttpOnly</code> cookie so noVNC&#39;s JS/CSS and
+the RFB socket keep authenticating.</li>
+<li>Unauthenticated or wrong-password requests get <code>401</code> +
+<code>WWW-Authenticate: Basic realm=&quot;ServerBrowser&quot;</code>; WebSocket upgrades are refused.</li>
+<li>The password is never printed back — <code>tunnel-url</code> reports <code>passwordProtected</code>
+and <code>passwordSet</code> only.</li>
+</ul>
+<h3>Environment variables</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Effect</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>TUNNEL_PASSWORD</code></td>
+<td>Default password when none is passed</td>
+<td>(none — required)</td>
+</tr>
+<tr>
+<td><code>TUNNEL_TARGET</code></td>
+<td>Default local target</td>
+<td><code>http://127.0.0.1:6080</code></td>
+</tr>
+<tr>
+<td><code>TUNNEL_PROXY_PORT</code></td>
+<td>Port of the local password gate</td>
+<td><code>6199</code></td>
+</tr>
+<tr>
+<td><code>TUNNEL_CUSTOM_URL</code></td>
+<td>Public URL for the <code>custom</code> provider</td>
+<td>(none)</td>
+</tr>
+<tr>
+<td><code>TUNNEL_URL_TIMEOUT_MS</code></td>
+<td>How long to wait for a provider URL</td>
+<td><code>30000</code></td>
+</tr>
+<tr>
+<td><code>TUNNEL_DEBUG_LOG</code></td>
+<td>Append the gate&#39;s stdout/stderr to this file</td>
+<td>(off)</td>
+</tr>
+</tbody></table>
+<h3>Examples</h3>
+<pre><code class="language-bash"># Password-gated tunnel in front of the noVNC page (custom = bring your own)
+node scripts/tunnel.js tunnel-create my-session s3cret custom
+node scripts/tunnel.js tunnel-route http://127.0.0.1:6080 custom
+node scripts/tunnel.js tunnel-url custom
+node scripts/tunnel.js tunnel-status custom
+node scripts/tunnel.js tunnel-stop custom
+
+# Cloudflare quick tunnel (needs cloudflared installed)
+node scripts/tunnel.js tunnel-create my-session s3cret cloudflare
+</code></pre>
+<h3>Security notes</h3>
+<ul>
+<li>Always set a password; the gate refuses to start without one.</li>
+<li>The provider is validated <strong>before</strong> the shared gate is touched, so a failed
+<code>cloudflare</code> start can never disturb a running <code>custom</code> tunnel.</li>
+<li>Do not expose the raw CDP port (9222) or the gate&#39;s own port directly.</li>
+<li><code>datastore/tunnel-state.json</code> holds the gate password and is written <code>0600</code>.</li>
+</ul>
+<h3>Plan for own tunnel service launch</h3>
+<p><code>tunnel.js</code> already isolates the provider behind <code>resolveProvider(name)</code>. A
+future phase can add a <code>tunnel-service/</code> module (multi-client session
+management, timeouts, a control plane for lifecycle) without touching the
+commands above.</p>
+<hr>
+<h2>11. Standalone app</h2>
+<p><code>standalone/</code> is a thin, scriptable CLI in front of the same engines: the browser
+group delegates to <code>scripts/live.js</code>, the tunnel group to <code>scripts/tunnel.js</code>,
+and the AI group to the provider layer in <code>standalone/providers/</code>.</p>
+<h3>Setup</h3>
+<pre><code class="language-bash">node standalone/index.js --help      # or: npm run standalone -- --help
+node standalone/index.js browser     # list that group&#39;s subcommands
+</code></pre>
+<h3>Groups</h3>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Subcommands</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>browser</code></td>
+<td><code>goto</code>, <code>click</code>, <code>fill</code>, <code>dump</code>, <code>screenshot</code>, <code>pdf</code>, <code>extract-*</code>, <code>save-page-json</code>, <code>screenshot-element</code>, <code>status-set</code>, <code>progress</code>, <code>notify</code>, <code>overlay-state</code>, <code>pause</code>, <code>resume</code>, <code>agent-tab-*</code>, <code>context-*</code>, <code>db-*</code></td>
+</tr>
+<tr>
+<td><code>tunnel</code></td>
+<td><code>create</code>, <code>route</code>, <code>url</code>, <code>status</code>, <code>stop</code></td>
+</tr>
+<tr>
+<td><code>ai</code></td>
+<td><code>providers</code>, <code>ping</code>, <code>chat</code></td>
+</tr>
+<tr>
+<td><code>api-keys</code></td>
+<td><code>set</code>, <code>get</code>, <code>list</code>, <code>remove</code>, <code>path</code></td>
+</tr>
+</tbody></table>
+<h3>Commands</h3>
+<pre><code class="language-bash"># Browser automation (delegates to scripts/live.js)
+node standalone/index.js browser goto https://example.com
+node standalone/index.js browser click &quot;button#submit&quot;
+node standalone/index.js browser extract-links checkout
+node standalone/index.js browser db-select products &#39;{&quot;id&quot;:1}&#39;
+
+# Tunnels with password-protected ingress
+node standalone/index.js tunnel create my-session s3cret custom
+node standalone/index.js tunnel status custom
+node standalone/index.js tunnel stop custom
+
+# API keys — stored 0600 in ~/.config/serverbrowser/api-keys.json
+node standalone/index.js api-keys set anthropic sk-ant-abc123
+node standalone/index.js api-keys get anthropic            # masked
+node standalone/index.js api-keys get anthropic --reveal   # raw, on purpose
+node standalone/index.js api-keys list
+node standalone/index.js api-keys remove anthropic
+
+# AI calls through the provider layer
+node standalone/index.js ai providers                      # which keys are available
+node standalone/index.js ai ping                           # offline round trip
+node standalone/index.js ai chat echo &quot;summarise this&quot;     # no credentials needed
+node standalone/index.js ai chat openai &quot;summarise this&quot; --model gpt-4o-mini
+</code></pre>
+<h3>API key storage</h3>
+<p>Keys live in <code>~/.config/serverbrowser/api-keys.json</code> with the directory at <code>0700</code>
+and the file at <code>0600</code>; they are never written into the repository. <code>get</code>/<code>list</code>
+mask the value unless you pass <code>--reveal</code>.</p>
+<h3>AI provider abstraction</h3>
+<p><code>standalone/providers/ai.js</code> gives every provider the same call shape
+(<code>chat({ prompt, system, model, maxTokens, temperature })</code> → <code>{ text, usage }</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Credentials</th>
+<th>Base URL override</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>echo</code></td>
+<td>none (offline, deterministic)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>openai</code></td>
+<td><code>OPENAI_API_KEY</code> or the key store</td>
+<td><code>OPENAI_BASE_URL</code></td>
+</tr>
+<tr>
+<td><code>anthropic</code></td>
+<td><code>ANTHROPIC_API_KEY</code> or the key store</td>
+<td><code>ANTHROPIC_BASE_URL</code></td>
+</tr>
+<tr>
+<td><code>ollama</code></td>
+<td>none</td>
+<td><code>OLLAMA_URL</code></td>
+</tr>
+</tbody></table>
+<p>A missing key fails immediately with an actionable message instead of a 401 deep
+inside <code>fetch</code>. Adding a provider means adding one object with <code>name</code>,
+<code>requiresKey</code> and <code>chat()</code> to <code>PROVIDERS</code>.</p>
+<h3>Integrating with live.js</h3>
+<p>The standalone browser group forks <code>scripts/live.js</code> per command, so results are
+the same JSON lines and every <code>live.js</code> command is available — including the
+scraping, overlay and datastore commands.</p>
+<h2>12. Troubleshooting</h2>
+<ul>
+<li><strong>Ports in use:</strong> override them, e.g. <code>CDP_PORT=9223 WEB_PORT=6081 npm run vnc</code>,
+and pass the matching <code>CDP_URL</code> to <code>live</code>/<code>live-run</code>.</li>
+<li><strong>&quot;Profile is in use&quot;</strong> when starting: another Chrome is holding <code>profile/</code>.
+Close it, or point to a fresh one with <code>PROFILE=/tmp/chrome-alt npm run vnc</code>.</li>
+<li><strong>Can&#39;t attach:</strong> confirm <code>curl http://127.0.0.1:9222/json/version</code> responds
+while <code>npm run vnc</code> is running.</li>
+<li><strong>Stored script still closes the browser:</strong> only <code>browser.close()</code> is
+suppressed. If a script calls it via a different name/path, run it through
+<code>live-run</code> (which patches the shared Playwright singleton that the script
+imports) rather than requiring it directly.</li>
+<li><strong>Local Chrome not detected:</strong> start Chrome with <code>--remote-debugging-port=9222</code>
+and verify with <code>curl http://127.0.0.1:9222/json/version</code>. If another
+process uses that port, try 9223 or 9224, or point at it explicitly with
+<code>npm run local-chrome -- 9444</code> / <code>node scripts/local-chrome.js detect 9444</code>.</li>
+<li><strong>No HUD on the VNC screen:</strong> the driver logs a self-check line —
+<code>[driver] self-check: {&quot;stealth&quot;:…,&quot;overlayConfig&quot;:…,&quot;overlayApi&quot;:…,&quot;hud&quot;:…}</code>.
+If <code>hud</code> is <code>false</code>, the injected script failed to parse; <code>overlay-state</code>
+reports the same thing from the agent side.</li>
+<li><strong><code>status-set</code> / <code>progress</code> / <code>notify</code> return <code>ok</code> but nothing appears:</strong> they
+are no-ops when the HUD is not installed. Check <code>overlay-state</code> first, and
+reload the page (<code>goto</code>) so the init script runs.</li>
+<li><strong>Tunnel answers 401:</strong> every request needs the password — <code>curl -u any:PW …</code>
+or <code>…?pw=PW</code>. For noVNC, open the viewer with <code>?pw=…</code> in the URL; the cookie
+is then set for the page&#39;s own assets.</li>
+<li><strong><code>tunnel-create</code> says <code>cloudflared not found</code>:</strong> install the provider binary
+(the error links to the download) or use <code>--provider custom</code> with
+<code>TUNNEL_CUSTOM_URL</code> set.</li>
+<li><strong><code>db-*</code> says nothing is connected:</strong> the datastore connects lazily; pass
+<code>DATASTORE_PATH</code> or use <code>db-connect &lt;path&gt;</code> to choose a file.</li>
+</ul>
+
+</body>
+</html>

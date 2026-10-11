@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Quickstart (5-minute tour)</h1>
+<p>The fastest way to see what <code>ServerBrowser/</code> can do.</p>
+<h2>1. Open a URL</h2>
+<pre><code class="language-bash">node headless.js https://example.com
+</code></pre>
+<p>Output:</p>
+<pre><code>Opened: https://example.com/
+Title:  Example Domain
+Profile dir: /opt/lampp/htdocs/ServerBrowser/profile
+</code></pre>
+<p>This launches real headless Chrome 140, navigates to the URL, prints
+the title, and exits. The persistent profile under <code>./profile/</code> is
+saved for next time.</p>
+<h2>2. Open + screenshot</h2>
+<pre><code class="language-bash">node headless.js --shot https://example.com
+</code></pre>
+<p>Output:</p>
+<pre><code>[screenshot] saved 98953 bytes -&gt; /opt/lampp/htdocs/ServerBrowser/screenshots/screenshot-2026-07-20_15-00-30.png
+Opened: https://example.com/
+Title:  Example Domain
+Profile dir: /opt/lampp/htdocs/ServerBrowser/profile
+Screenshot: /opt/lampp/htdocs/ServerBrowser/screenshots/screenshot-2026-07-20_15-00-30.png
+</code></pre>
+<p>The screenshot is auto-named under <code>./screenshots/</code> with a timestamp.</p>
+<p>For a specific path:</p>
+<pre><code class="language-bash">node headless.js --shot=foo.png https://example.com
+</code></pre>
+<p>For the <strong>full</strong> scrollable page (not just the viewport):</p>
+<pre><code class="language-bash">node headless.js --shot --full-page https://example.com
+</code></pre>
+<p>See <a href="screenshots.md">screenshots.md</a> for the full reference.</p>
+<h2>3. Search the web</h2>
+<pre><code class="language-bash">node headless.js --search &quot;playwright tutorial&quot; --search-limit 5
+</code></pre>
+<p>Output:</p>
+<pre><code>Search: playwright tutorial  (engine: duckduckgo-html, 5 results)
+  1. Playwright Python Tutorial | BrowserStack
+     https://www.browserstack.com/guide/playwright-python
+     ...
+  2. Getting Started | Playwright Python
+     https://playwright.dev/python/docs/intro
+     ...
+  ...
+</code></pre>
+<p>This uses the <strong>DuckDuckGo HTML</strong> endpoint under the hood (which is
+purpose-built for bots and never throws a captcha). If that ever
+fails, it automatically falls back to <strong>Brave Search</strong> and then to
+<strong>SearXNG</strong>.</p>
+<p>See <a href="search.md">search.md</a> for the full reference.</p>
+<h2>4. Run a fingerprint check</h2>
+<pre><code class="language-bash">node headless.js --check https://bot.sannysoft.com
+</code></pre>
+<p>Output (formatted as JSON):</p>
+<pre><code class="language-json">{
+  &quot;userAgent&quot;: &quot;Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0.0 Safari/537.36&quot;,
+  &quot;webdriver&quot;: undefined,
+  &quot;languages&quot;: [&quot;en-US&quot;, &quot;en&quot;],
+  &quot;language&quot;: &quot;en-US&quot;,
+  &quot;plugins&quot;: 6,
+  &quot;mimeTypes&quot;: 4,
+  &quot;hasChrome&quot;: true,
+  &quot;hasChromeRuntime&quot;: true,
+  &quot;hasChromeCSI&quot;: true,
+  &quot;hasChromeLoadTimes&quot;: true,
+  &quot;hardwareConcurrency&quot;: 4,
+  &quot;deviceMemory&quot;: 8,
+  &quot;webglVendor&quot;: &quot;Intel Inc.&quot;,
+  &quot;webglRenderer&quot;: &quot;Intel Iris OpenGL Engine&quot;,
+  ...
+}
+</code></pre>
+<p>The fact that <code>webdriver</code> is missing (== <code>undefined</code>) is the whole
+point: the headless browser doesn&#39;t reveal that it&#39;s automated.</p>
+<p>See <a href="stealth.md">stealth.md</a> for the full breakdown of what the
+stealth layer patches and how to test it.</p>
+<h2>5. Use it as a library</h2>
+<pre><code class="language-js">const { launch, search, screenshot } = require(&#39;./headless&#39;);
+
+(async () =&gt; {
+  // 1. Launch a stealth headless Chrome
+  const { page, human, close } = await launch({
+    url: &#39;https://example.com/login&#39;,
+    screenshot: true,                  // auto-screenshot the page on load
+  });
+
+  // 2. Type into a form like a human
+  await human.type(&#39;input[name=email]&#39;,    &#39;me@example.com&#39;);
+  await human.think();
+  await human.type(&#39;input[name=password]&#39;, &#39;hunter2&#39;);
+  await human.click(&#39;button[type=submit]&#39;);
+  await page.waitForLoadState(&#39;networkidle&#39;);
+
+  // 3. Take a screenshot of the result
+  await screenshot(&#39;logged-in.png&#39;, { fullPage: true });
+
+  // 4. Run a web search in the same session (cookies / profile shared)
+  const r = await search(&#39;node js&#39;, { limit: 3 });
+  console.log(r.results);
+
+  await close();
+})();
+</code></pre>
+<h2>6. Headed mode (visible window)</h2>
+<p>If you want to <strong>see</strong> the browser, for debugging or to solve a
+CAPTCHA manually:</p>
+<pre><code class="language-bash">node headless.js --headed https://example.com
+</code></pre>
+<p>This opens a real Chrome window with the stealth patches still
+applied. Cookies you log in with persist into the profile, so the
+next headless run finds you logged in.</p>
+<h2>7. Custom profile per project</h2>
+<p>If you have several independent &quot;identities&quot; (e.g. one per account
+you&#39;re managing), use a different profile per identity:</p>
+<pre><code class="language-bash">node headless.js --profile=./profiles/work    https://work-app.com
+node headless.js --profile=./profiles/personal https://other-app.com
+</code></pre>
+<p>The profile dir is just a normal Chrome user-data directory, so you
+can inspect it with <code>ls profile/Default/Cookies</code> (it&#39;s a SQLite DB).</p>
+<hr>
+<h2>Next steps</h2>
+<ul>
+<li>Full <strong>CLI reference</strong> — <a href="cli.md">cli.md</a></li>
+<li>Full <strong>library API</strong> — <a href="api.md">api.md</a></li>
+<li><strong>How the stealth layer works</strong> — <a href="stealth.md">stealth.md</a></li>
+<li><strong>Web search</strong> — <a href="search.md">search.md</a></li>
+<li><strong>Screenshots</strong> — <a href="screenshots.md">screenshots.md</a></li>
+<li><strong>Persistence model</strong> — <a href="persistence.md">persistence.md</a></li>
+</ul>
+
+</body>
+</html>
