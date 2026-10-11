@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1f2937; background: #fff; line-height: 1.6; }
+  a { color: #2563eb; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; }
+  code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+  th { background: #f8fafc; }
+  blockquote { border-left: 4px solid #e5e7eb; padding-left: 16px; color: #4b5563; margin-left: 0; }
+  img { max-width: 100%; }
+  .back { display: inline-block; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Gumroad Upload — Working Method</h1>
+<p>Status: full process (cover image + content zip + save + publish) <strong>CONFIRMED working</strong> via <code>scripts/gumroad-upload.js</code> on <strong>all 16 products</strong> in <code>upload_map.json</code> (repo root) with a <code>gumroad_url</code>.</p>
+<p>Latest clean combined runs (cover + content + save + publish, no manual steps):</p>
+<table>
+<thead>
+<tr>
+<th>Product</th>
+<th>Permalink</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Restaurants in US</td>
+<td><code>suhxvk</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in India</td>
+<td><code>eealgw</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in Spain</td>
+<td><code>mccwdn</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in China</td>
+<td><code>gsaugt</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in Brazil</td>
+<td><code>cqkdpn</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in France</td>
+<td><code>jqqqs</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+<tr>
+<td>Construction in Germany</td>
+<td><code>fbhcqt</code></td>
+<td><code>RESULT: OK</code> — Published!</td>
+</tr>
+</tbody></table>
+<h2>Running products that are absent from the map</h2>
+<p>Some products already exist in Gumroad but have no <code>gumroad_url</code> in <code>upload_map.json</code>.
+Build a queue file of <code>{permalink, slug, zip, thumb}</code> and run:</p>
+<pre><code class="language-bash">node scripts/gumroad-upload.js --queue /tmp/gumwork_queue.json
+</code></pre>
+<p>The queue runner does not stop on a single failure — it logs
+<code>[queue] &lt;permalink&gt; FAILED: &lt;reason&gt;</code> and continues, then prints
+<code>[queue] done: pass=N fail=M</code>.</p>
+<p><strong>Match products to map slugs from the product&#39;s own name/description</strong>, not by eye:
+the dataset row count appears both in the product name (<code>-- 44,936 Companies</code>) and in its
+description (<code>Sample dataset of 44,936 companies</code>), and it matches the map&#39;s <code>rows</code> field.
+Requiring name+description+country to agree gave an unambiguous 1:1 match for every product.</p>
+<p>Beware: the account contained <strong>duplicate listings</strong> — <code>cwybwr</code>/<code>naawkq</code>/<code>kyxdol</code> were all
+&quot;IT &amp; services - france -- 33,811&quot;, plus <code>icbqe</code>/<code>kvmlbb</code> (Brazil) and <code>pyogqc</code>/<code>fkmxme</code>
+(India). Only one of each was filled; the strays were left empty and unpublished.</p>
+<p>Verification per product: header shows <strong>&quot;Unpublish&quot;</strong> (i.e. it is live) and the content
+editor shows the file card (<code>ZIP … MB</code> + <code>Download</code>).</p>
+<h2>THE FULL PROCESS (per product, in order)</h2>
+<ol>
+<li><strong>Download files</strong> from <code>http://50.114.206.42:555/uploads/...</code> (see <code>upload_map.json</code> entries: <code>upload_thumbnail</code>, <code>upload_zip</code>) → <code>/tmp/gumwork/</code>.</li>
+<li><strong>Go to Product tab</strong>: <code>https://gumroad.com/products/&lt;permalink&gt;/edit</code></li>
+<li><strong>Cover image</strong> — see <a href="#cover-interface-variants">Cover interface variants</a> below. Feed the thumb PNG via <code>DOM.setFileInputFiles {files, backendNodeId}</code> using the id from the intercepted <code>Page.fileChooserOpened</code>.</li>
+<li><strong>Content tab</strong>: click <code>a[role=tab]</code> &quot;Content&quot; (real mouse events) → <code>https://gumroad.com/products/&lt;p&gt;/edit/content</code></li>
+<li><strong>Content zip</strong>: click <code>button</code> &quot;Upload your files&quot; → modal → <code>div[role=menuitem]</code> &quot;Computer files&quot; (exact match) → chooser → feed the zip.<ul>
+<li>After upload the &quot;Upload your files&quot; button disappears; content editor shows <code>&lt;filename&gt;\nZIP&lt;MB&gt;\nDownload</code>.</li>
+</ul>
+</li>
+<li><strong>Save</strong>: <code>button</code> &quot;Save changes&quot; → alert <strong>&quot;Changes saved!&quot;</strong>.</li>
+<li><strong>Publish</strong>: <code>button</code> &quot;Publish and continue&quot; (or &quot;Unpublish&quot; if already live) → alert <strong>&quot;Published!&quot;</strong>, lands on <code>/edit/share</code>.</li>
+<li><strong>Verify via DOM</strong>, then delete the product&#39;s files from <code>/tmp/gumwork/</code>.</li>
+</ol>
+<p>Recording reference: <code>/projects/ServerBrowser/Recording 10_2_2026 at 1_46_45 AM.js</code> (Playwright steps for product <code>mbiubc</code> — sequential locators: section-2 button → section-2 label → set input file → content tab → upload files → header buttons = Save/Publish).</p>
+<h2>Content flow (verified on <code>fbhcqt</code>, <code>suhxvk</code>, <code>eealgw</code>)</h2>
+<ol>
+<li><code>a[role=tab]</code> <strong>&quot;Content&quot;</strong> → waits for <code>/edit/content</code>, then <code>button</code> <strong>&quot;Upload your files&quot;</strong>.<ul>
+<li>If the button is <strong>absent</strong> the product already has content — confirm by looking for the
+file card (<code>ZIP</code> + <code>Download</code> in the editor text) and skip.</li>
+</ul>
+</li>
+<li>Modal opens with four <code>div[role=menuitem]</code> items: <strong>Embed media</strong> / <strong>Computer files</strong> /
+<strong>Existing product files</strong> / <strong>Dropbox files</strong>. Click <strong>&quot;Computer files&quot;</strong> by <strong>exact text
+match</strong> — &quot;Embed media&quot; sits directly above it and has been mis-clicked before.</li>
+<li>Intercept the chooser and feed the zip via <code>DOM.setFileInputFiles {files, backendNodeId}</code>.</li>
+<li><strong>Wait for the upload to actually finish.</strong> The card appears instantly as
+<code>ZIP 0% of N MB (0 byte/second)  Download  Cancel</code> and only later settles to <code>ZIP N MB</code>.
+Poll until the progress text (<code>\d+% of</code>, <code>byte/second</code>, <code>Cancel</code>) is gone — saving or
+publishing while it still reads 0% is a real race and can strand a partial upload.</li>
+<li><code>button</code> <strong>&quot;Save changes&quot;</strong> → alert <strong>&quot;Changes saved!&quot;</strong>, plus a &quot;notify customers?&quot; banner.
+Dismiss it with <strong>&quot;Skip for now&quot;</strong> and/or Escape before touching Publish.</li>
+<li><code>button</code> <strong>&quot;Publish and continue&quot;</strong> → alert <strong>&quot;Published!&quot;</strong>, lands on <code>/edit/share</code>.<ul>
+<li>A product that is <strong>already live shows &quot;Unpublish&quot;</strong> instead — never click that.</li>
+</ul>
+</li>
+</ol>
+<h2>Cover interface variants</h2>
+<p>The Cover section renders differently depending on whether the product already has a cover image.
+All four were observed in the wild and are handled by <code>uploadCover()</code> in <code>scripts/gumroad-upload.js</code>.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Trigger</th>
+<th>Flow</th>
+<th>Verified on</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>0</td>
+<td>Cover already present, tab layout</td>
+<td><code>label[role=tab]</code> <strong>&quot;Computer files&quot;</strong> → chooser (1 click)</td>
+<td><code>qxqkn</code>, <code>eealgw</code></td>
+</tr>
+<tr>
+<td>1</td>
+<td>Product has a cover, <code>button[aria-label=&quot;Add cover&quot;]</code> present</td>
+<td><strong>Add cover</strong> (+) → popover <strong>&quot;Upload images or videos&quot;</strong> → <strong>2nd popover &quot;Computer files&quot;</strong> → chooser (3 clicks)</td>
+<td><code>jqqqs</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>Brand-new product, no cover</td>
+<td>Cover section <code>button</code> <strong>&quot;Upload images or videos&quot;</strong> → <em>section inlines into the &quot;Computer files&quot; / &quot;External link&quot; tab layout</em> → <strong>&quot;Computer files&quot;</strong> → chooser (2 clicks)</td>
+<td><code>mccwdn</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>No cover control anywhere</td>
+<td>Thumbnail section <code>label</code> &quot;Upload&quot; → chooser. <strong>Requires a SQUARE image ≥600×600</strong> — our 866×362 thumbs are rejected with <em>&quot;Image must be square.&quot;</em></td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h3>Key gotchas</h3>
+<ul>
+<li><strong>Radix popovers render off-screen.</strong> They are <code>position: fixed</code> and anchor to their trigger. When the
+trigger sits low in the scroll container the popper lands <em>below</em> the viewport — observed
+<code>transform: translate(590px, 1090px)</code> on an 800px-tall window — so every synthetic click misses it.
+<strong>Park the trigger near the top of the scroll container first</strong> (<code>parkAndCentre()</code>), then re-read the
+popper&#39;s rect.</li>
+<li><strong><code>window.scrollTo()</code> is a no-op on this page.</strong> The whole form lives inside its own scroll container
+(<code>overflow-y: auto</code>). Walk up to the nearest scrollable ancestor (<code>SCROLL_PARENT</code>) and set
+<code>scrollTop</code> instead.</li>
+<li><strong>Variant 2 does not open a chooser or popover.</strong> Clicking &quot;Upload images or videos&quot; silently rewrites
+the Cover section into the tab layout; you must then look for the &quot;Computer files&quot; <code>label</code> and click it.</li>
+<li>Never build a section selector as a <strong>nested template literal</strong> — the quotes break. Use
+<code>sectionExpr()</code> (string concatenation) so the emitted JS stays valid.</li>
+</ul>
+<h2>Environment</h2>
+<ul>
+<li>Headed Chrome with CDP on <code>http://127.0.0.1:9222</code></li>
+<li>VNC (noVNC) on <code>http://50.114.206.38:6080/novnc/vnc_auto.html</code></li>
+<li>Product edit page: <code>https://gumroad.com/products/qxqkn/edit</code></li>
+<li>Login session persists in <code>/projects/ServerBrowser/profile</code></li>
+<li>Helper eval script: <code>/tmp/eval.js</code> (snippet below)</li>
+<li>Upload source files in <code>/tmp/gumwork/</code> (fetched from <code>http://50.114.206.42:555/</code>, map: <code>upload_map.json</code>)</li>
+</ul>
+<h2>Why naive approaches fail (lessons learned)</h2>
+<ul>
+<li><code>el.click()</code> / <code>label.click()</code> via <code>Runtime.evaluate</code> does <strong>not</strong> open Chrome&#39;s file chooser here.</li>
+<li><code>DOM.setFileInputFiles</code> with <code>nodeId</code> from <code>DOM.querySelector</code> fails (&quot;Could not find node&quot;).</li>
+<li><code>DOM.requestNode</code> with an objectId from a separate WS connection fails.</li>
+<li>Setting file via <code>backendNodeId</code> from an intercepted chooser does not populate <code>input.files</code> reliably.</li>
+</ul>
+<p><strong>What works:</strong> dispatch <em>real</em> mouse input events at the element&#39;s coordinates → Chrome opens the native file chooser → intercept with <code>Page.setInterceptFileChooserDialog</code> → then set the file. Verify via <code>input.files.length</code>.</p>
+<blockquote>
+<p>NOTE: <code>Page.handleFileChooser</code> does <strong>NOT</strong> exist in this Chrome build (<code>-32601 &#39;Page.handleFileChooser&#39; wasn&#39;t found</code>). Use <code>DOM.setFileInputFiles { files, backendNodeId }</code> where <code>backendNodeId</code> comes from the intercepted <code>Page.fileChooserOpened</code> event — this DOES work when issued while the chooser is still open/intercepted (confirmed for the content zip).</p>
+</blockquote>
+<h2>Working recipe (copy-paste)</h2>
+<p>Save as <code>/tmp/upload-step.js</code>:</p>
+<pre><code class="language-js">const http = require(&#39;http&#39;);
+function get(p) {
+  return new Promise((res, rej) =&gt; {
+    http.get({ host: &#39;127.0.0.1&#39;, port: 9222, path: p }, r =&gt; {
+      let d = &#39;&#39;; r.on(&#39;data&#39;, c =&gt; d += c); r.on(&#39;end&#39;, () =&gt; res(JSON.parse(d)));
+    }).on(&#39;error&#39;, rej);
+  });
+}
+function conn(wsUrl) {
+  const WebSocket = require(&#39;/projects/ServerBrowser/node_modules/ws&#39;);
+  return new Promise((res, rej) =&gt; {
+    const s = new WebSocket(wsUrl);
+    let id = 0; const pend = {}; const events = [];
+    s.on(&#39;open&#39;, () =&gt; {
+      s.on(&#39;message&#39;, m =&gt; {
+        const j = JSON.parse(m);
+        if (j.id &amp;&amp; pend[j.id]) { pend[j.id](j); delete pend[j.id]; }
+        else if (j.method) events.push(j);
+      });
+      res({
+        send: (method, params = {}) =&gt; new Promise(r =&gt; {
+          const i = ++id; pend[i] = r; s.send(JSON.stringify({ id: i, method, params }));
+        }),
+        events, close: () =&gt; s.close()
+      });
+    });
+    s.on(&#39;error&#39;, rej);
+  });
+}
+
+// USAGE: node upload-step.js &quot;&lt;label text&gt;&quot; &quot;&lt;abs path to file&gt;&quot;
+(async () =&gt; {
+  const labelText = process.argv[2] || &#39;Computer files&#39;;
+  const filePath  = process.argv[3] || &#39;/tmp/gumwork/construction-in-united-states-thumb.png&#39;;
+  const t = (await get(&#39;/json/list&#39;)).find(x =&gt; x.type === &#39;page&#39;);
+  const c = await conn(t.webSocketDebuggerUrl);
+  await c.send(&#39;Page.enable&#39;);
+  await c.send(&#39;Page.setInterceptFileChooserDialog&#39;, { enabled: true });
+  // 1. find label by visible text -&gt; center coords
+  const pos = await c.send(&#39;Runtime.evaluate&#39;, {
+    expression: `JSON.stringify((function(){
+      const l=[...document.querySelectorAll(&#39;label&#39;)].find(x=&gt;x.textContent.includes(${JSON.stringify(labelText)}));
+      if(!l) return null;
+      const r=l.getBoundingClientRect();
+      return {x:r.left+r.width/2, y:r.top+r.height/2};
+    })())`, returnByValue: true
+  });
+  const coords = JSON.parse(pos.result.result.value);
+  if (!coords) { console.log(&#39;LABEL NOT FOUND:&#39;, labelText); process.exit(1); }
+  // 2. real mouse events (this opens the chooser)
+  const { x, y } = coords;
+  await c.send(&#39;Input.dispatchMouseEvent&#39;, { type: &#39;mouseMoved&#39;, x, y });
+  await c.send(&#39;Input.dispatchMouseEvent&#39;, { type: &#39;mousePressed&#39;, x, y, button: &#39;left&#39;, clickCount: 1 });
+  await c.send(&#39;Input.dispatchMouseEvent&#39;, { type: &#39;mouseReleased&#39;, x, y, button: &#39;left&#39;, clickCount: 1 });
+  await new Promise(r =&gt; setTimeout(r, 1000));
+  // 3. intercepted chooser -&gt; accept with real file
+  const chooser = c.events.find(e =&gt; e.method === &#39;Page.fileChooserOpened&#39;);
+  if (!chooser) { console.log(&#39;NO FILE CHOOSER OPENED&#39;); process.exit(1); }
+  const resp = await c.send(&#39;Page.handleFileChooser&#39;, { action: &#39;accept&#39;, files: [filePath] });
+  console.log(&#39;handleFileChooser:&#39;, JSON.stringify(resp.result || resp.error));
+  await new Promise(r =&gt; setTimeout(r, 1500));
+  // 4. verify
+  const chk = await c.send(&#39;Runtime.evaluate&#39;, {
+    expression: `[...document.querySelectorAll(&#39;input[type=file]&#39;)].map(i=&gt;i.files.length)`,
+    returnByValue: true
+  });
+  console.log(&#39;files per input:&#39;, JSON.stringify(chk.result.result.value));
+  c.close(); setTimeout(() =&gt; process.exit(0), 300);
+})();
+</code></pre>
+<p>Run:</p>
+<pre><code class="language-bash">node /tmp/upload-step.js &quot;Computer files&quot; &quot;/tmp/gumwork/construction-in-united-states-thumb.png&quot;
+</code></pre>
+<h2>Content tab flow (CONFIRMED WORKING)</h2>
+<ol>
+<li>Navigate to <code>https://gumroad.com/products/qxqkn/edit/content</code> (click <code>a[role=tab]</code> &quot;Content&quot; via Input events, or go directly).</li>
+<li>Click <strong><code>button</code> &quot;Upload your files&quot;</strong> (coords ~907,274 at top of content editor) with real mouse events → opens a modal dialog (<code>[role=dialog]</code>).</li>
+<li>In the modal, click the <strong><code>div[role=menuitem]</code> &quot;Computer files&quot;</strong> (exact-match, ~930,370) with real mouse events → opens the native file chooser. (Beware: the modal also has an &quot;Embed media&quot; menuitem — match exactly on <code>Computer files</code>.)</li>
+<li>Intercept: <code>Page.setInterceptFileChooserDialog {enabled:true}</code> BEFORE clicking step 3. On <code>Page.fileChooserOpened</code>, grab <code>params.backendNodeId</code> and send <code>DOM.setFileInputFiles { files:[absPath], backendNodeId }</code>.</li>
+<li>Wait ~3s, verify a file-input change / upload progress in DOM. (<code>Page.handleFileChooser</code> unavailable in this Chrome.)</li>
+<li>Modal closes automatically after file accepted.</li>
+</ol>
+<h3>Content upload result</h3>
+<ul>
+<li>✅ Content zip <code>/tmp/gumwork/construction-in-united-states-50000.zip</code> (5.9MB) accepted on product <code>qxqkn</code> (user confirmed &quot;ok that worked&quot;).</li>
+<li>✅ Cover image uploaded earlier via &quot;Computer files&quot; label on Product tab.</li>
+</ul>
+<h2>DOM map of the product edit page (Product tab)</h2>
+<ul>
+<li><strong>Cover section</strong>: <code>label</code> with text <strong>&quot;Computer files&quot;</strong> (role=<code>tab</code>), sibling <code>a</code> = &quot;External link&quot;.<ul>
+<li>First child: <code>&lt;input type=&quot;file&quot; class=&quot;sr-only&quot; multiple accept=&quot;.jpeg,.jpg,.png,.gif,.mov&quot;&gt;</code>.</li>
+<li>Parent chain: <code>div[role=&quot;tablist&quot;]</code> → container div → dashed-border upload box → <code>section</code> (Cover section).</li>
+<li>Clicking &quot;Computer files&quot; opens the chooser → feed it the image file.</li>
+</ul>
+</li>
+<li><strong>Thumbnail section</strong>: label <strong>&quot;Upload&quot;</strong> (accept <code>.jpeg,.jpg,.png,.gif,.webp,image/avif</code>) — same recipe. (Deferred.)</li>
+<li><strong>Content tab</strong>: separate tab (&quot;Product | Content | Receipt | Share&quot;) — not yet mapped.</li>
+<li>Image-accepting file inputs on page: 2 (<code>accept</code> contains <code>avif</code>), audio input: 1 (<code>accept</code> contains <code>mp3</code>).</li>
+</ul>
+<h2>Verification helpers</h2>
+<p>Simple eval against the page (save as <code>/tmp/eval.js</code>):</p>
+<pre><code class="language-js">const http=require(&#39;http&#39;);
+function get(p){return new Promise((res,rej)=&gt;{http.get({host:&#39;127.0.0.1&#39;,port:9222,path:p},r=&gt;{let d=&#39;&#39;;r.on(&#39;data&#39;,c=&gt;d+=c);r.on(&#39;end&#39;,()=&gt;res(JSON.parse(d)))}).on(&#39;error&#39;,rej)})}
+function send(ws,expr){return new Promise((res,rej)=&gt;{const id=Math.floor(Math.random()*1e9);const WebSocket=require(&#39;/projects/ServerBrowser/node_modules/ws&#39;);const s=new WebSocket(ws);s.on(&#39;open&#39;,()=&gt;s.send(JSON.stringify({id,method:&#39;Runtime.evaluate&#39;,params:{expression:expr,returnByValue:true}})));s.on(&#39;message&#39;,m=&gt;{const j=JSON.parse(m);if(j.id===id){res(j);s.close()}});s.on(&#39;error&#39;,rej)})}
+(async()=&gt;{const t=(await get(&#39;/json/list&#39;)).find(x=&gt;x.type===&#39;page&#39;);const r=await send(t.webSocketDebuggerUrl,process.argv[2]||&#39;1+1&#39;);console.log(JSON.stringify(r.result||r.error,null,1));})();
+</code></pre>
+<ul>
+<li>Check file inputs:
+<code>node /tmp/eval.js &quot;[...document.querySelectorAll(&#39;input[type=file]&#39;)].map(i=&gt;({n:i.files.length,acc:i.accept.slice(0,30)}))&quot;</code></li>
+<li>Screenshot: <code>node /projects/ServerBrowser/scripts/live.js screenshot /tmp/x.png</code></li>
+<li>User prefers <strong>DOM evaluation over screenshots</strong> — always verify via DOM.</li>
+</ul>
+<h3>Publish &amp; save buttons (both CONFIRMED WORKING)</h3>
+<p>Top bar of the edit page (after scrolling to top, ~y=64):</p>
+<ol>
+<li><strong><code>button</code> &quot;Publish and continue&quot;</strong> (x≈1154, y≈64) → real mouse click → publishes the product. Page shows <strong>&quot;Published!&quot;</strong> alert and navigates to the next tab (e.g. <code>/products/qxqkn/edit/share</code>).</li>
+<li><strong><code>button</code> &quot;Save changes&quot;</strong> (x≈1168, y≈64) → real mouse click → saves. Page shows <strong>&quot;Changes saved!&quot;</strong> alert + optional &quot;notify your customers?&quot; prompt (Skip it) + Gumroad Discover eligibility notice.</li>
+</ol>
+<p>Standard click recipe for both:</p>
+<pre><code class="language-js">await c.send(&#39;Input.dispatchMouseEvent&#39;,{type:&#39;mouseMoved&#39;,x,y});
+await c.send(&#39;Input.dispatchMouseEvent&#39;,{type:&#39;mousePressed&#39;,x,y,button:&#39;left&#39;,buttons:1,clickCount:1});
+await c.send(&#39;Input.dispatchMouseEvent&#39;,{type:&#39;mouseReleased&#39;,x,y,button:&#39;left&#39;,buttons:0,clickCount:1});
+</code></pre>
+<p>Find coords via <code>Runtime.evaluate</code> on the button&#39;s <code>getBoundingClientRect()</code>. Verify via URL change + <code>[role=alert]</code> text in DOM.</p>
+<h2>Current state / next steps</h2>
+<ul>
+<li>✅ Cover image uploaded to product <code>qxqkn</code> via &quot;Computer files&quot; label (user confirmed).</li>
+<li>✅ Content zip uploaded on Content tab via &quot;Upload your files&quot; → modal → &quot;Computer files&quot; → chooser (user confirmed).</li>
+<li>✅ <strong>&quot;Publish and continue&quot;</strong> pressed → &quot;Published!&quot; → landed on Share tab.</li>
+<li>✅ <strong>&quot;Save changes&quot;</strong> pressed → &quot;Changes saved!&quot; (customer-notify prompt skipped).</li>
+<li>⏸ Thumbnail: on hold, per user.</li>
+<li>Delete files from <code>/tmp/gumwork/</code> only after user confirms the upload is verified.</li>
+</ul>
+
+</body>
+</html>
