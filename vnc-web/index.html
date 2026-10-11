@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServerBrowser — Live Control Panel</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --fg:#e6e9ef; --dim:#9aa3b2; --acc:#4f8cff; --ok:#37d67a; --warn:#ffb454; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .wrap { max-width:980px; margin:0 auto; padding:28px 20px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:32px 0 10px; color:var(--ok); border-bottom:1px solid var(--line); padding-bottom:6px; }
+  p { color:var(--fg); }
+  .muted { color:var(--dim); }
+  a { color:var(--acc); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:14px 0; }
+  .btnrow { display:flex; gap:12px; flex-wrap:wrap; margin:6px 0 2px; }
+  .btn { display:inline-block; padding:10px 16px; border-radius:8px; font-weight:600; text-decoration:none; }
+  .btn.primary { background:var(--acc); color:#fff; }
+  code, pre { background:#0b0d11; border:1px solid var(--line); border-radius:6px; }
+  code { padding:1px 6px; color:#9fd0ff; font-size:13px; }
+  pre { padding:12px 14px; overflow:auto; font-size:13px; color:#cfe3ff; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; font-size:13px; }
+  th,td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--acc); }
+  .tag { display:inline-block; padding:1px 8px; border-radius:20px; font-size:11px; }
+  .tag.data { background:#12331f; color:var(--ok); }
+  .tag.nav { background:#20304d; color:var(--acc); }
+  .tag.inp { background:#332a14; color:var(--warn); }
+  ul { padding-left:20px; }
+  li { margin:4px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ServerBrowser — Live Control Panel</h1>
+  <p class="muted">A headed, real Google&nbsp;Chrome is running on this machine. You are seeing its screen. You can drive it <b>live</b> with Playwright over CDP, watch it here, and read data back — all without it ever closing.</p>
+
+  <div class="btnrow">
+    <a class="btn primary" href="/novnc/vnc_auto.html">Open VNC viewer →</a>
+  </div>
+
+  <h2>1 · Overview</h2>
+  <div class="card">
+    <p>This session was started with <code>npm run vnc</code>. It runs:</p>
+    <ul>
+      <li><b>Xvfb</b> — a virtual display (<code>:10</code>)</li>
+      <li><b>Real Google Chrome</b> (not Chromium) headed, persistent profile in <code>profile/</code>, with the DevTools port open</li>
+      <li><b>x11vnc</b> + <b>noVNC</b> — this web view of the screen</li>
+      <li><b>CDP</b> endpoint for live automation</li>
+    </ul>
+    <p class="muted">Endpoints: VNC <code>http://localhost:6080/novnc/vnc_auto.html</code> · CDP <code>http://127.0.0.1:9222/json/version</code></p>
+  </div>
+
+  <h2>2 · Drive the live browser with Playwright</h2>
+  <div class="card">
+    <p>Attach to the already-running Chrome (never launches/closes it):</p>
+    <pre>const { chromium } = require('playwright');
+const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+const page = browser.contexts()[0].pages()[0];   // the visible tab
+
+await page.goto('https://example.com');
+const text = await page.evaluate(() => document.body.innerText);
+console.log(text);</pre>
+    <p class="muted">You can also <code>page.click('a')</code>, <code>page.fill('input[name=email]', 'me@x.com')</code>, <code>await page.screenshot({path:'x.png'})</code>, etc. Everything you do is visible in the VNC view above and your logins persist in <code>profile/</code>.</p>
+  <h2>3 · One-line commands with <code>npm run live</code></h2>
+  <div class="card">
+    <p>Quick commands that attach, act, and read — printing JSON:</p>
+    <pre>npm run live -- goto https://example.com
+npm run live -- dump
+npm run live -- text
+npm run live -- click 'button'
+npm run live -- fill 'input[name=email]' me@x.com
+npm run live -- screenshot /tmp/shot.png
+npm run live -- eval "document.querySelectorAll('a').length"</pre>
+    <table>
+      <tr><th>Command</th><th>What it does</th></tr>
+      <tr><td><span class="tag nav">goto / reload / back / forward</span></td><td>navigate the active tab</td></tr>
+      <tr><td><span class="tag nav">wait &lt;ms&gt; / waitfor &lt;css&gt;</span></td><td>sleep / wait for an element</td></tr>
+      <tr><td><span class="tag inp">fill / type / click / press / keyboard / clear</span></td><td>interact with inputs &amp; buttons</td></tr>
+      <tr><td><span class="tag data">url / title / text / html / dump</span></td><td>read data off the page</td></tr>
+      <tr><td><span class="tag data">eval '&lt;js&gt;'</span></td><td>run any JS in the page, return the value</td></tr>
+      <tr><td><span class="tag data">screenshot &lt;file&gt;</span></td><td>save a screenshot</td></tr>
+      <tr><td><span class="tag nav">tabs / tab &lt;i&gt; / close-tab</span></td><td>manage open tabs (never closes the last one)</td></tr>
+    </table>
+    <p class="muted">For long AI sessions, pipe JSON-lines: <code>echo '{"cmd":"goto","args":["https://x.com"]}' | npm run live -- --stdin</code></p>
+  </div>
+
+  <h2>4 · Run existing stored scripts on this live browser</h2>
+  <div class="card">
+    <p>Re-run your stored scripts against this same visible instance, over and over, without it ever closing:</p>
+    <pre>npm run live-run -- batch.js codes.csv
+npm run live-run -- dataforthai.js some-arg</pre>
+    <p class="muted"><code>live-run</code> redirects the script's <code>chromium.launch()</code> to attach to this browser and suppresses <code>browser.close()</code> — so the VNC view, cookies and logins all survive every run.</p>
+  </div>
+
+  <h2>5 · Help</h2>
+  <div class="card">
+    <p>Full walkthrough: <code>npm run drive-doc</code> → <code>docs/LIVE-DRIVE.md</code>. To stop the session (and this Chrome): press <b>Ctrl-C</b> in the terminal running <code>npm run vnc</code>.</p>
+  </div>
+</div>
+</body>
+</html>
+  </div>
