@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Stealth, Persistent Chrome for Node.js</title>
+<meta name="description" content="Stealth, persistent, real-Chrome browsing toolkit for Node.js — live VNC, web scraping, web search, agent tooling.">
+<style>
+:root{--bg:#0b1220;--panel:#111827;--line:#1f2937;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--green:#34d399}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+nav{position:sticky;top:0;z-index:50;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;justify-content:space-between;height:56px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#f8fafc}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.nav-links{display:flex;gap:22px;font-size:14px}.nav-links a{color:var(--muted)}.nav-links a:hover{color:var(--text);text-decoration:none}
+header{padding:72px 0 56px;border-bottom:1px solid var(--line);background:radial-gradient(ellipse at 30% -10%,#172554 0%,var(--bg) 60%)}
+.badge{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--green);border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.08);padding:4px 12px;border-radius:999px;margin-bottom:18px}
+h1{font-size:clamp(30px,5vw,46px);line-height:1.15;color:#f8fafc;max-width:780px}
+h1 .a{color:var(--accent)}
+.lede{font-size:18px;color:var(--muted);max-width:640px;margin-top:16px}
+.cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
+.btn{display:inline-block;padding:12px 22px;border-radius:8px;font-weight:600;font-size:15px;text-decoration:none;transition:all .15s}
+.btn:hover{text-decoration:none}
+.btn.primary{background:var(--accent);color:#0b1220}.btn.primary:hover{background:#7dd3fc}
+.btn.ghost{border:1px solid var(--line);color:var(--text);background:transparent}.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.term{background:#0b0d11;border:1px solid var(--line);border-radius:10px;margin-top:36px;overflow:hidden;max-width:680px}
+.term-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+.term-bar .td{width:11px;height:11px;border-radius:50%}
+.term-bar .tl{font-size:12px;color:var(--muted);margin-left:6px}
+.term pre{padding:16px 18px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.7;color:#cbd5e1;overflow-x:auto}
+.term .c{color:#64748b}.term .k{color:var(--accent)}.term .g{color:var(--green)}
+section{padding:56px 0;border-bottom:1px solid var(--line)}
+h2{font-size:26px;color:#f8fafc;margin-bottom:6px}
+.sub{color:var(--muted);font-size:15px;margin-bottom:30px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;transition:border-color .15s}
+.card:hover{border-color:var(--accent)}
+.card h3{font-size:16px;color:var(--accent);margin-bottom:8px}
+.card p{font-size:14.5px;color:var(--muted)}
+.card code{background:#0b0d11;color:var(--green);padding:1px 6px;border-radius:4px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
+.step .n{font-size:32px;font-weight:800;color:var(--line);line-height:1;margin-bottom:8px}
+.step h4{font-size:15px;color:var(--accent);margin-bottom:6px}
+.step p{font-size:13.5px;color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+th{color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+td{color:var(--muted)}
+td code,th code{color:var(--green);background:#0b0d11;padding:1px 6px;border-radius:4px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.dg{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.dl{display:block;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;text-decoration:none;transition:border-color .15s}
+.dl:hover{border-color:var(--accent);text-decoration:none}
+.dl .t{font-size:14.5px;font-weight:600;color:var(--text)}
+.dl .d{font-size:13px;color:var(--muted);margin-top:4px}
+footer{padding:32px 0 48px}
+footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+footer p{font-size:13.5px;color:var(--muted)}
+footer .fl{display:flex;gap:20px;font-size:14px}
+@media(max-width:640px){.nav-links{display:none}header{padding:48px 0 40px}section{padding:40px 0}}
+</style>
+</head>
+<body>
+<nav><div class="wrap"><div class="brand"><span class="dot"></span> ServerBrowser</div><div class="nav-links"><a href="#features">Features</a><a href="#live">Live Mode</a><a href="#stack">Stack</a><a href="#docs">Docs</a><a href="https://github.com/willdebonaire/ServerBrowser2">GitHub ↗</a></div></div></nav>
+<header><div class="wrap"><span class="badge">Stealth · Persistent · Real Chrome</span><h1>Browse the web like a <span class="a">human</span>, automate it like a machine.</h1><p class="lede">A Node.js toolkit for stealth, persistent Google Chrome sessions — with live VNC control, web scraping, web search, and agent tooling built in.</p><div class="cta"><a class="btn primary" href="docs-html/index.html">Read the Docs →</a><a class="btn ghost" href="https://github.com/willdebonaire/ServerBrowser2">View on GitHub</a></div><div class="term"><div class="term-bar"><span class="td" style="background:#ef4444"></span><span class="td" style="background:#fbbf24"></span><span class="td" style="background:#22c55e"></span><span class="tl">bash</span></div><pre><span class="c"># Launch a live, watchable Chrome over VNC</span>
+<span class="k">npm run</span> vnc -- --resolution 1920x1080
+
+<span class="c"># Drive it command-by-command, get JSON back</span>
+<span class="k">npm run</span> live -- goto https://example.com
+<span class="k">npm run</span> live -- dump
+
+<span class="c"># One-shot stealth headless browsing</span>
+<span class="k">node</span> headless.js --shot https://example.com
+
+<span class="c"># Check how undetectable you are</span>
+<span class="k">node</span> headless.js --check https://bot.sannysoft.com</pre></div></div></header>
+<section id="features"><div class="wrap"><h2>Features</h2><p class="sub">Everything you need to browse, scrape, and automate without tripping bot detection.</p><div class="grid">
+<div class="card"><h3>🛡️ Stealth Layer</h3><p>Patches <code>navigator.webdriver</code>, <code>window.chrome</code>, WebGL vendor, plugins, permissions, UA, and automation flags before any page script runs.</p></div>
+<div class="card"><h3>💾 Persistent Profiles</h3><p>Cookies, localStorage, sessions, service workers, and IndexedDB all survive between runs. Solve a CAPTCHA once, stay logged in forever.</p></div>
+<div class="card"><h3>🖥️ Live VNC + CDP</h3><p>Watch and steer a real headed Chrome over noVNC. Attach via Chrome DevTools Protocol with <code>connectOverCDP()</code> — never relaunch, never lose your session.</p></div>
+<div class="card"><h3>🤖 59 Live Commands</h3><p>Navigate, click, fill, extract, screenshot, PDF, tabs, contexts, agent tabs, pause/resume HUD — all JSON-in/JSON-out for agent integration.</p></div>
+<div class="card"><h3>🔎 Web Search</h3><p>DuckDuckGo HTML, Brave, and SearXNG with a transparent fallback chain. No API keys needed.</p></div>
+<div class="card"><h3>📸 Screenshots &amp; PDF</h3><p>Auto-screenshot on load, or ad-hoc. Full page, viewport, element, region — PNG, JPEG, or PDF export.</p></div>
+<div class="card"><h3>🕷️ Scraping Tools</h3><p>dataforthai.com directory scraper with batch runner, resumability, and list-only fast mode. Extract CSS, tables, links, regex, page JSON via CLI.</p></div>
+<div class="card"><h3>🗄️ DuckDB Datastore</h3><p>Local analytical storage with <code>db-insert</code>, <code>db-select</code>, <code>db-query</code> commands. Works with no browser running.</p></div>
+<div class="card"><h3>🔗 Password-Gated Tunnels</h3><p>Expose local ports as shareable URLs via Cloudflare, ngrok, or custom providers — password enforced locally, not by the provider.</p></div>
+</div></div></section>
+<section id="live"><div class="wrap"><h2>Live Mode</h2><p class="sub">One command starts the full stack: virtual display, real Chrome, VNC viewer, and CDP endpoint.</p><div class="steps">
+<div class="step"><div class="n">01</div><h4>npm run vnc</h4><p>Launches Xvfb + headed Chrome + x11vnc + noVNC on one command.</p></div>
+<div class="step"><div class="n">02</div><h4>Watch &amp; Drive</h4><p>Open the noVNC viewer to see the screen. Attach over CDP and drive it live — commands return JSON.</p></div>
+<div class="step"><div class="n">03</div><h4>HUD + Pause/Resume</h4><p>An overlay HUD shows current action, progress, and notifications. Pause to hand control to a human.</p></div>
+<div class="step"><div class="n">04</div><h4>Store &amp; Reuse</h4><p>Save to DuckDB, store scripts for <code>live-run</code>, relaunch against the same persistent profile.</p></div>
+</div></div></section>
+<section id="stack"><div class="wrap"><h2>The Stack</h2><p class="sub">How ServerBrowser keeps Chrome real, persistent, and hard to detect.</p><table><thead><tr><th>Layer</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>stealth.js</code></td><td>Init script injected before page scripts — patches webdriver, chrome object, WebGL, plugins, permissions, UA</td></tr>
+<tr><td><code>vnc-driver.js</code></td><td>Launches headed Chrome with stealth + HUD, exposes CDP port, stays running for live attach</td></tr>
+<tr><td><code>live.js</code></td><td>59 commands over CDP — navigation, interaction, extraction, screenshots, tabs, datastore, tunnels</td></tr>
+<tr><td><code>connect.js</code></td><td>Same commands against a remote Chrome via <code>CDP_URL</code> — no local browser needed</td></tr>
+<tr><td><code>live-run.js</code></td><td>Intercepts <code>chromium.launch()</code> in stored scripts and redirects to the live browser</td></tr>
+<tr><td><code>standalone/</code></td><td>Scriptable CLI: browser, tunnel, AI, and API key groups — all JSON-in/JSON-out</td></tr>
+<tr><td><code>datastore/</code></td><td>DuckDB-backed local storage — works with no browser, no network</td></tr>
+</tbody></table></div></section>
+<section id="docs"><div class="wrap"><h2>Documentation</h2><p class="sub">Start with the quickstart, then go as deep as you need.</p><div class="dg">
+<a class="dl" href="docs-html/quickstart.html"><span class="t">Quickstart</span><span class="d">5-minute tour of the most useful commands</span></a>
+<a class="dl" href="docs-html/installation.html"><span class="t">Installation</span><span class="d">Prerequisites, install, verify</span></a>
+<a class="dl" href="docs-html/LIVE-DRIVE.html"><span class="t">Live Drive</span><span class="d">The full VNC + CDP live stack</span></a>
+<a class="dl" href="docs-html/cli.html"><span class="t">CLI Reference</span><span class="d">Every flag, every example</span></a>
+<a class="dl" href="docs-html/api.html"><span class="t">Library API</span><span class="d">launch(), search(), screenshot(), human</span></a>
+<a class="dl" href="docs-html/COMMANDS.html"><span class="t">Commands</span><span class="d">All 59+ live verbs with specs</span></a>
+<a class="dl" href="docs-html/stealth.html"><span class="t">Stealth</span><span class="d">What it patches and what it doesn't</span></a>
+<a class="dl" href="docs-html/troubleshooting.html"><span class="t">Troubleshooting</span><span class="d">Common problems and fixes</span></a>
+<a class="dl" href="docs-html/index.html"><span class="t">All Docs →</span><span class="d">Full sidebar with every page</span></a>
+</div></div></section>
+<footer><div class="wrap"><p>ServerBrowser — stealth, persistent, real-Chrome browsing for Node.js.</p><div class="fl"><a href="https://github.com/willdebonaire/ServerBrowser2">GitHub</a><a href="docs-html/index.html">Docs</a><a href="https://github.com/willdebonaire/ServerBrowser2/issues">Issues</a></div></div></footer>
+</body>
+</html>
