@@ -24,6 +24,7 @@ jobs:
           mkdir -p _site
           cp index.html _site/
           cp -r docs-html _site/docs-html
+          cp -r assets _site/assets
           cp .nojekyll _site/
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -95,6 +95,28 @@ footer .fl{display:flex;gap:20px;font-size:14px}
 <div class="step"><div class="n">03</div><h4>HUD + Pause/Resume</h4><p>An overlay HUD shows current action, progress, and notifications. Pause to hand control to a human.</p></div>
 <div class="step"><div class="n">04</div><h4>Store &amp; Reuse</h4><p>Save to DuckDB, store scripts for <code>live-run</code>, relaunch against the same persistent profile.</p></div>
 </div></div></section>
+<section id="human"><div class="wrap"><h2>Human in the Loop</h2><p class="sub">The agent drives. You step in when it matters.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start">
+<div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:16px">
+<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">Agent handles the routine</h4>
+<p style="font-size:14.5px;color:var(--muted)">Navigation, form filling, clicking, extracting data, taking screenshots — the agent does the repetitive work so you don't have to. Every action returns JSON, so you can pipe it into your own pipelines.</p>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:16px">
+<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">You take over with pause</h4>
+<p style="font-size:14.5px;color:var(--muted)">Hit <code>npm run live -- pause</code> and the agent stops. A HUD overlay appears on the VNC screen with a Resume button. You solve the CAPTCHA, pick the right option, or make the call — then click Resume and the agent picks up right where it left off.</p>
+</div>
+<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px">
+<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">Persistent state means no lost work</h4>
+<p style="font-size:14.5px;color:var(--muted)">Cookies, sessions, and login state survive across runs. Solve a CAPTCHA once in headed mode, and the agent inherits that clean session every time it relaunches.</p>
+</div>
+</div>
+<div>
+<img src="assets/vnc-apple.png" alt="ServerBrowser driving Chrome over VNC — browsing apple.com" style="width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 4px 24px rgba(0,0,0,.4)">
+<p style="font-size:13px;color:var(--muted);margin-top:10px;text-align:center">Real headed Chrome driving apple.com over VNC — 1280×800, full stealth layer active</p>
+</div>
+</div>
+</div></section>
 <section id="stack"><div class="wrap"><h2>The Stack</h2><p class="sub">How ServerBrowser keeps Chrome real, persistent, and hard to detect.</p><table><thead><tr><th>Layer</th><th>What it does</th></tr></thead><tbody>
 <tr><td><code>stealth.js</code></td><td>Init script injected before page scripts — patches webdriver, chrome object, WebGL, plugins, permissions, UA</td></tr>
 <tr><td><code>vnc-driver.js</code></td><td>Launches headed Chrome with stealth + HUD, exposes CDP port, stays running for live attach</td></tr>
