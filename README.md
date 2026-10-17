@@ -1,6 +1,6 @@
 # ServerBrowser - Stealth Headless Google Chrome (via Playwright)
 
-Persistent, real-Chrome, hard-to-detect browsing + web search toolkit
+Persistent, real-Chrome, interactive browsing + web search toolkit
 for Node.js.
 
 > **Full documentation:** see [`docs/`](docs/index.md).
