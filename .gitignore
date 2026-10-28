@@ -44,3 +44,8 @@ Recording *.js
 user-scripts/*
 !user-scripts/.gitkeep
 !user-scripts/README.md
+
+# Scrapers — folder stays empty on the remote (via .gitkeep) to show the
+# expected layout, but every real file inside stays local and is never pushed.
+scrapers/*
+!scrapers/.gitkeep
