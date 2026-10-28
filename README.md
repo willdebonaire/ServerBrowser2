@@ -3,7 +3,7 @@
 Persistent, real-Chrome, hard-to-detect browsing + web search toolkit
 for Node.js.
 
-> **Full documentation:** see [`docs/`](docs/index.md).
+> **GitHub:** [willdebonaire/ServerBrowser2](https://github.com/willdebonaire/ServerBrowser2) | **Full documentation:** see [`docs/`](docs/index.md).
 
 ## What's here
 
