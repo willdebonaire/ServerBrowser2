@@ -6,67 +6,487 @@
 <title>ServerBrowser — Stealth, Persistent Chrome for Node.js</title>
 <meta name="description" content="Stealth, persistent, real-Chrome browsing toolkit for Node.js — live VNC, web scraping, web search, agent tooling.">
 <style>
-:root{--bg:#0b1220;--panel:#111827;--line:#1f2937;--text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--green:#34d399}
+:root{
+  --bg:#050112;
+  --panel:#0d0a1f;
+  --line:#2a1a4a;
+  --text:#e2e8f0;
+  --muted:#a4b0c4;
+  --accent:#06d6fd;      /* electric blue */
+  --pink:#ff00ea;        /* neon pink */
+  --nebula:#7b2cbf;      /* dark purple */
+  --green:#34d399;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased}
-a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
-.wrap{max-width:1060px;margin:0 auto;padding:0 24px}
-nav{position:sticky;top:0;z-index:50;background:rgba(11,18,32,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-nav .wrap{display:flex;align-items:center;justify-content:space-between;height:56px}
-.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:#f8fafc}
-.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
-.nav-links{display:flex;gap:22px;font-size:14px}.nav-links a{color:var(--muted)}.nav-links a:hover{color:var(--text);text-decoration:none}
-header{padding:72px 0 56px;border-bottom:1px solid var(--line);background:radial-gradient(ellipse at 30% -10%,#172554 0%,var(--bg) 60%)}
-.badge{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--green);border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.08);padding:4px 12px;border-radius:999px;margin-bottom:18px}
-h1{font-size:clamp(30px,5vw,46px);line-height:1.15;color:#f8fafc;max-width:780px}
-h1 .a{color:var(--accent)}
-.lede{font-size:18px;color:var(--muted);max-width:640px;margin-top:16px}
-.cta{display:flex;gap:14px;margin-top:30px;flex-wrap:wrap}
-.btn{display:inline-block;padding:12px 22px;border-radius:8px;font-weight:600;font-size:15px;text-decoration:none;transition:all .15s}
-.btn:hover{text-decoration:none}
-.btn.primary{background:var(--accent);color:#0b1220}.btn.primary:hover{background:#7dd3fc}
-.btn.ghost{border:1px solid var(--line);color:var(--text);background:transparent}.btn.ghost:hover{border-color:var(--accent);color:var(--accent)}
-.term{background:#0b0d11;border:1px solid var(--line);border-radius:10px;margin-top:36px;overflow:hidden;max-width:680px}
-.term-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
-.term-bar .td{width:11px;height:11px;border-radius:50%}
-.term-bar .tl{font-size:12px;color:var(--muted);margin-left:6px}
-.term pre{padding:16px 18px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.7;color:#cbd5e1;overflow-x:auto}
-.term .c{color:#64748b}.term .k{color:var(--accent)}.term .g{color:var(--green)}
-section{padding:56px 0;border-bottom:1px solid var(--line)}
-h2{font-size:26px;color:#f8fafc;margin-bottom:6px}
-.sub{color:var(--muted);font-size:15px;margin-bottom:30px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 22px;transition:border-color .15s}
-.card:hover{border-color:var(--accent)}
-.card h3{font-size:16px;color:var(--accent);margin-bottom:8px}
-.card p{font-size:14.5px;color:var(--muted)}
-.card code{background:#0b0d11;color:var(--green);padding:1px 6px;border-radius:4px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace}
+
+/* ---- Cosmic background ---- */
+body{
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(ellipse at 50% 30%,#0c001f 0%,var(--bg) 65%),
+             radial-gradient(circle at 85% 20%,#7b2cbf22 0%,transparent 55%),
+             radial-gradient(circle at 15% 70%,#06d6fd11 0%,transparent 50%);
+  color:var(--text);
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+}
+
+/* animated star-canvas */
+#star-canvas{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+  z-index:0;
+}
+.stars{position:absolute;width:2px;height:2px;background:var(--accent);border-radius:50%;box-shadow:0 0 6px var(--accent);opacity:.8}
+.twinkle{
+  animation:twinkle 3s infinite ease-in-out;
+}
+@keyframes twinkle{
+  0%,100%{opacity:.3;transform:scale(.8)}
+  50%{opacity:.8;transform:scale(1.1)}
+}
+
+/* nebula drift */
+#nebula{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+  z-index:0;
+  background:
+    radial-gradient(ellipse at 30% 40%,#7b2cbf15 0%,transparent 60%),
+    radial-gradient(ellipse at 70% 60%,#06d6fd15 0%,transparent 60%);
+  animation:nebula-drift 25s ease-in-out infinite alternate;
+}
+@keyframes nebula-drift{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(-3%,2%) scale(1.05)}
+  100%{transform:translate(2%,-3%) scale(1)}
+}
+
+/* ---- Custom cursor (mouse effect) ---- */
+#custom-cursor{
+  position:fixed;
+  top:0;left:0;
+  width:22px;height:22px;
+  border:1px solid var(--pink);
+  border-radius:50%;
+  pointer-events:none;
+  z-index:9999;
+  mix-blend-mode:difference;
+  transform:translate(-50%,-50%);
+  transition:width .2s ease,height .2s ease,border-color .2s ease,box-shadow .2s ease;
+  box-shadow:0 0 12px var(--pink),
+             inset 0 0 6px var(--pink);
+}
+.cursor-trail{
+  position:fixed;
+  width:6px;height:6px;
+  background:var(--pink);
+  border-radius:50%;
+  pointer-events:none;
+  z-index:9998;
+  box-shadow:0 0 4px var(--pink);
+  transition:opacity .4s ease;
+  pointer-events:none;
+}
+.cursor-trail.fade{opacity:0}
+
+/* ---- Glimmer / hover sparkles ---- */
+.glimmer{
+  position:absolute;
+  width:8px;height:8px;
+  background:var(--pink);
+  border-radius:50%;
+  pointer-events:none;
+  box-shadow:0 0 8px var(--pink);
+  animation:glimmer-burst .9s ease-out forwards;
+}
+@keyframes glimmer-burst{
+  0%{transform:scale(1);opacity:.9;box-shadow:0 0 10px var(--pink)}
+  100%{transform:scale(3);opacity:0;box-shadow:0 0 0 var(--pink)}
+}
+
+/* ---- Page layout ---- */
+.wrap{
+  position:relative;
+  z-index:1;
+  max-width:1060px;
+  margin:0 auto;
+  padding:0 24px;
+}
+nav{
+  position:sticky;
+  top:0;
+  z-index:50;
+  background:rgba(5,1,18,.8);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+nav .wrap{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  height:56px;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-weight:700;
+  font-size:17px;
+  color:#f8fafc;
+}
+.brand .dot{
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--accent);
+  box-shadow:0 0 8px var(--accent),0 0 14px var(--accent);
+  animation:glow-pulse 2s infinite ease-in-out;
+}
+@keyframes glow-pulse{
+  0%,100%{box-shadow:0 0 8px var(--accent);opacity:1}
+  50%{box-shadow:0 0 18px #ff00ea,0 0 24px var(--accent);opacity:.85}
+}
+.nav-links{
+  display:flex;
+  gap:22px;
+  font-size:14px;
+}
+.nav-links a{
+  color:var(--muted);
+  transition:color .2s ease,color .2s ease;
+}
+.nav-links a:hover{
+  color:var(--pink);
+  text-shadow:0 0 10px var(--pink);
+}
+
+/* ---- Hero ---- */
+header{
+  padding:80px 0 60px;
+  border-bottom:1px solid var(--line);
+  position:relative;
+  overflow:hidden;
+}
+header::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:radial-gradient(ellipse at 30% -10%,#06d6fd08 0%,transparent 60%),
+              radial-gradient(ellipse at 70% 50%,#7b2cbf08 0%,transparent 60%);
+  z-index:0;
+}
+header .wrap{position:relative}
+.badge{
+  display:inline-block;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--pink);
+  border:1px solid rgba(255,0,234,.35);
+  background:rgba(255,0,234,.06);
+  padding:4px 12px;
+  border-radius:999px;
+  margin-bottom:18px;
+  box-shadow:0 0 8px rgba(255,0,234,.2);
+}
+h1{
+  font-size:clamp(30px,5vw,46px);
+  line-height:1.15;
+  color:#f8fafc;
+  max-width:780px;
+}
+h1 .a{
+  color:var(--pink);
+  text-shadow:0 0 16px rgba(255,0,234,.25),0 0 30px rgba(255,0,234,.1);
+}
+.lede{
+  font-size:18px;
+  color:var(--muted);
+  max-width:640px;
+  margin-top:16px;
+}
+.cta{
+  display:flex;
+  gap:14px;
+  margin-top:30px;
+  flex-wrap:wrap;
+}
+.btn{
+  display:inline-block;
+  padding:12px 22px;
+  border-radius:8px;
+  font-weight:600;
+  font-size:15px;
+  text-decoration:none;
+  transition:all .2s ease;
+  position:relative;
+  overflow:hidden;
+}
+.btn:hover{
+  text-decoration:none;
+  transform:translateY(-2px);
+  box-shadow:0 0 16px var(--pink);
+}
+.btn.primary{
+  background:linear-gradient(135deg,var(--pink),var(--accent));
+  color:#050112;
+  border:none;
+  box-shadow:0 0 12px rgba(255,0,234,.35);
+}
+.btn.primary:hover{
+  box-shadow:0 0 22px rgba(255,0,234,.55),0 0 30px var(--accent);
+}
+.btn.ghost{
+  border:1px solid var(--line);
+  color:var(--text);
+  background:rgba(13,10,31,.7);
+}
+.btn.ghost:hover{
+  border-color:var(--pink);
+  color:var(--pink);
+}
+
+/* ---- Terminal ---- */
+.term{
+  background:linear-gradient(145deg,#0d0a1f,#13102a);
+  border:1px solid var(--line);
+  border-radius:10px;
+  margin-top:36px;
+  overflow:hidden;
+  max-width:680px;
+  box-shadow:0 0 20px rgba(6,214,253,.06);
+}
+.term-bar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:10px 14px;
+  background:var(--panel);
+  border-bottom:1px solid var(--line);
+}
+.term-bar .td{
+  width:11px;
+  height:11px;
+  border-radius:50%;
+}
+.term-bar .tl{
+  font-size:12px;
+  color:var(--muted);
+  margin-left:6px;
+}
+.term pre{
+  padding:16px 18px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:13.5px;
+  line-height:1.7;
+  color:#cbd5e1;
+  overflow-x:auto;
+}
+.term .c{color:#64748b}
+.term .k{color:var(--accent)}
+.term .g{color:var(--green)}
+
+/* ---- Sections ---- */
+section{
+  padding:56px 0;
+  border-bottom:1px solid var(--line);
+}
+h2{
+  font-size:26px;
+  color:#f8fafc;
+  margin-bottom:6px;
+}
+.sub{
+  color:var(--muted);
+  font-size:15px;
+  margin-bottom:30px;
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  gap:16px;
+}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:20px 22px;
+  transition:all .2s ease;
+  position:relative;
+  overflow:hidden;
+}
+.card:hover{
+  border-color:var(--pink);
+  box-shadow:0 0 18px rgba(255,0,234,.15);
+  transform:translateY(-3px);
+}
+.card::before{
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(135deg,rgba(6,214,253,.03),rgba(255,0,234,.03));
+  opacity:0;
+  transition:opacity .3s ease;
+}
+.card:hover::before{opacity:1}
+.card h3{
+  font-size:16px;
+  color:var(--accent);
+  margin-bottom:8px;
+}
+.card p{
+  font-size:14.5px;
+  color:var(--muted);
+}
+.card code{
+  background:#0b0d11;
+  color:var(--green);
+  padding:1px 6px;
+  border-radius:4px;
+  font-size:13px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;
+}
 .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-.step{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
-.step .n{font-size:32px;font-weight:800;color:var(--line);line-height:1;margin-bottom:8px}
-.step h4{font-size:15px;color:var(--accent);margin-bottom:6px}
-.step p{font-size:13.5px;color:var(--muted)}
+.step{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:20px;
+  position:relative;
+}
+.step .n{
+  font-size:32px;
+  font-weight:800;
+  color:var(--pink);
+  line-height:1;
+  margin-bottom:8px;
+  text-shadow:0 0 10px var(--pink);
+}
+.step h4{
+  font-size:15px;
+  color:var(--accent);
+  margin-bottom:6px;
+}
+.step p{
+  font-size:13.5px;
+  color:var(--muted);
+}
 table{width:100%;border-collapse:collapse;font-size:14.5px}
 th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
 th{color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:.05em}
 td{color:var(--muted)}
 td code,th code{color:var(--green);background:#0b0d11;padding:1px 6px;border-radius:4px;font-size:13px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .dg{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
-.dl{display:block;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;text-decoration:none;transition:border-color .15s}
-.dl:hover{border-color:var(--accent);text-decoration:none}
-.dl .t{font-size:14.5px;font-weight:600;color:var(--text)}
-.dl .d{font-size:13px;color:var(--muted);margin-top:4px}
-footer{padding:32px 0 48px}
-footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
-footer p{font-size:13.5px;color:var(--muted)}
-footer .fl{display:flex;gap:20px;font-size:14px}
-@media(max-width:640px){.nav-links{display:none}header{padding:48px 0 40px}section{padding:40px 0}}
+.dl{
+  display:block;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:16px 18px;
+  text-decoration:none;
+  transition:all .2s ease;
+}
+.dl:hover{
+  border-color:var(--pink);
+  box-shadow:0 0 16px rgba(255,0,234,.1);
+  text-decoration:none;
+  transform:translateY(-2px);
+}
+.dl .t{
+  font-size:14.5px;
+  font-weight:600;
+  color:var(--text);
+}
+.dl .d{
+  font-size:13px;
+  color:var(--muted);
+  margin-top:4px;
+}
+
+/* ---- Footer ---- */
+footer{
+  padding:32px 0 48px;
+  position:relative;
+  z-index:1;
+}
+footer .wrap{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:14px;
+}
+footer p{
+  font-size:13.5px;
+  color:var(--muted);
+}
+footer .fl{
+  display:flex;
+  gap:20px;
+  font-size:14px;
+}
+footer .fl a{
+  color:var(--muted);
+  transition:color .2s ease;
+}
+footer .fl a:hover{
+  color:var(--pink);
+  text-shadow:0 0 8px var(--pink);
+}
+
+/* responsive */
+@media(max-width:640px){
+  .nav-links{display:none}
+  header{padding:48px 0 40px}
+  section{padding:40px 0}
+}
 </style>
 </head>
 <body>
-<nav><div class="wrap"><div class="brand"><span class="dot"></span> ServerBrowser</div><div class="nav-links"><a href="#features">Features</a><a href="#live">Live Mode</a><a href="#stack">Stack</a><a href="#docs">Docs</a><a href="https://github.com/willdebonaire/ServerBrowser2">GitHub ↗</a></div></div></nav>
-<header><div class="wrap"><span class="badge">Stealth · Persistent · Real Chrome</span><h1>Browse the web like a <span class="a">human</span>, automate it like a machine.</h1><p class="lede">A Node.js toolkit for stealth, persistent Google Chrome sessions — with live VNC control, web scraping, web search, and agent tooling built in.</p><div class="cta"><a class="btn primary" href="docs-html/index.html">Read the Docs →</a><a class="btn ghost" href="https://github.com/willdebonaire/ServerBrowser2">View on GitHub</a></div><div class="term"><div class="term-bar"><span class="td" style="background:#ef4444"></span><span class="td" style="background:#fbbf24"></span><span class="td" style="background:#22c55e"></span><span class="tl">bash</span></div><pre><span class="c"># Launch a live, watchable Chrome over VNC</span>
+
+<!-- ===== Cosmic starfield canvas ===== -->
+<div id="custom-cursor"></div>
+<div id="star-canvas"></div>
+<div id="nebula"></div>
+
+<nav><div class="wrap">
+  <div class="brand"><span class="dot"></span> ServerBrowser</div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#live">Live Mode</a>
+    <a href="#stack">Stack</a>
+    <a href="#docs">Docs</a>
+    <a href="https://github.com/willdebonaire/ServerBrowser2">GitHub ↗</a>
+  </div>
+</div></nav>
+
+<header><div class="wrap">
+  <span class="badge">Stealth · Persistent · Real Chrome</span>
+  <h1>Browse the web like a <span class="a">human</span>, automate it like a machine.</h1>
+  <p class="lede">A Node.js toolkit for stealth, persistent Google Chrome sessions — with live VNC control, web scraping, web search, and agent tooling built in.</p>
+  <div class="cta">
+    <a class="btn primary" href="docs-html/index.html">Read the Docs →</a>
+    <a class="btn ghost" href="https://github.com/willdebonaire/ServerBrowser2">View on GitHub</a>
+  </div>
+  <div class="term">
+    <div class="term-bar">
+      <span class="td" style="background:#ef4444"></span>
+      <span class="td" style="background:#fbbf24"></span>
+      <span class="td" style="background:#22c55e"></span>
+      <span class="tl">bash</span>
+    </div>
+    <pre><span class="c"># Launch a live, watchable Chrome over VNC</span>
 <span class="k">npm run</span> vnc -- --resolution 1920x1080
 
 <span class="c"># Drive it command-by-command, get JSON back</span>
@@ -77,66 +497,209 @@ footer .fl{display:flex;gap:20px;font-size:14px}
 <span class="k">node</span> headless.js --shot https://example.com
 
 <span class="c"># Check how undetectable you are</span>
-<span class="k">node</span> headless.js --check https://bot.sannysoft.com</pre></div></div></header>
-<section id="features"><div class="wrap"><h2>Features</h2><p class="sub">Everything you need to browse, scrape, and automate without tripping bot detection.</p><div class="grid">
-<div class="card"><h3>🛡️ Stealth Layer</h3><p>Patches <code>navigator.webdriver</code>, <code>window.chrome</code>, WebGL vendor, plugins, permissions, UA, and automation flags before any page script runs.</p></div>
-<div class="card"><h3>💾 Persistent Profiles</h3><p>Cookies, localStorage, sessions, service workers, and IndexedDB all survive between runs. Solve a CAPTCHA once, stay logged in forever.</p></div>
-<div class="card"><h3>🖥️ Live VNC + CDP</h3><p>Watch and steer a real headed Chrome over noVNC. Attach via Chrome DevTools Protocol with <code>connectOverCDP()</code> — never relaunch, never lose your session.</p></div>
-<div class="card"><h3>🤖 59 Live Commands</h3><p>Navigate, click, fill, extract, screenshot, PDF, tabs, contexts, agent tabs, pause/resume HUD — all JSON-in/JSON-out for agent integration.</p></div>
-<div class="card"><h3>🔎 Web Search</h3><p>DuckDuckGo HTML, Brave, and SearXNG with a transparent fallback chain. No API keys needed.</p></div>
-<div class="card"><h3>📸 Screenshots &amp; PDF</h3><p>Auto-screenshot on load, or ad-hoc. Full page, viewport, element, region — PNG, JPEG, or PDF export.</p></div>
-<div class="card"><h3>🕷️ Scraping Tools</h3><p>dataforthai.com directory scraper with batch runner, resumability, and list-only fast mode. Extract CSS, tables, links, regex, page JSON via CLI.</p></div>
-<div class="card"><h3>🗄️ DuckDB Datastore</h3><p>Local analytical storage with <code>db-insert</code>, <code>db-select</code>, <code>db-query</code> commands. Works with no browser running.</p></div>
-<div class="card"><h3>🔗 Password-Gated Tunnels</h3><p>Expose local ports as shareable URLs via Cloudflare, ngrok, or custom providers — password enforced locally, not by the provider.</p></div>
-</div></div></section>
-<section id="live"><div class="wrap"><h2>Live Mode</h2><p class="sub">One command starts the full stack: virtual display, real Chrome, VNC viewer, and CDP endpoint.</p><div class="steps">
-<div class="step"><div class="n">01</div><h4>npm run vnc</h4><p>Launches Xvfb + headed Chrome + x11vnc + noVNC on one command.</p></div>
-<div class="step"><div class="n">02</div><h4>Watch &amp; Drive</h4><p>Open the noVNC viewer to see the screen. Attach over CDP and drive it live — commands return JSON.</p></div>
-<div class="step"><div class="n">03</div><h4>HUD + Pause/Resume</h4><p>An overlay HUD shows current action, progress, and notifications. Pause to hand control to a human.</p></div>
-<div class="step"><div class="n">04</div><h4>Store &amp; Reuse</h4><p>Save to DuckDB, store scripts for <code>live-run</code>, relaunch against the same persistent profile.</p></div>
-</div></div></section>
-<section id="human"><div class="wrap"><h2>Human in the Loop</h2><p class="sub">The agent drives. You step in when it matters.</p>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start">
-<div>
-<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:16px">
-<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">Agent handles the routine</h4>
-<p style="font-size:14.5px;color:var(--muted)">Navigation, form filling, clicking, extracting data, taking screenshots — the agent does the repetitive work so you don't have to. Every action returns JSON, so you can pipe it into your own pipelines.</p>
-</div>
-<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px;margin-bottom:16px">
-<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">You take over with pause</h4>
-<p style="font-size:14.5px;color:var(--muted)">Hit <code>npm run live -- pause</code> and the agent stops. A HUD overlay appears on the VNC screen with a Resume button. You solve the CAPTCHA, pick the right option, or make the call — then click Resume and the agent picks up right where it left off.</p>
-</div>
-<div style="background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px">
-<h4 style="color:var(--accent);font-size:15px;margin-bottom:8px">Persistent state means no lost work</h4>
-<p style="font-size:14.5px;color:var(--muted)">Cookies, sessions, and login state survive across runs. Solve a CAPTCHA once in headed mode, and the agent inherits that clean session every time it relaunches.</p>
-</div>
-</div>
-<div>
-<img src="assets/vnc-apple.png" alt="ServerBrowser driving Chrome over VNC — browsing apple.com" style="width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 4px 24px rgba(0,0,0,.4)">
-<p style="font-size:13px;color:var(--muted);margin-top:10px;text-align:center">Real headed Chrome driving apple.com over VNC — 1280×800, full stealth layer active</p>
-</div>
-</div>
+<span class="k">node</span> headless.js --check https://bot.sannysoft.com</pre>
+  </div>
+</div></header>
+
+<section id="features"><div class="wrap">
+  <h2>Features</h2>
+  <p class="sub">Everything you need to browse, scrape, and automate without tripping bot detection.</p>
+  <div class="grid">
+    <div class="card"><h3>🛡️ Stealth Layer</h3><p>Patches <code>navigator.webdriver</code>, <code>window.chrome</code>, WebGL vendor, plugins, permissions, UA, and automation flags before any page script runs.</p></div>
+    <div class="card"><h3>💾 Persistent Profiles</h3><p>Cookies, localStorage, sessions, service workers, and IndexedDB all survive between runs. Solve a CAPTCHA once, stay logged in forever.</p></div>
+    <div class="card"><h3>🖥️ Live VNC + CDP</h3><p>Watch and steer a real headed Chrome over noVNC. Attach via Chrome DevTools Protocol with <code>connectOverCDP()</code> — never relaunch, never lose your session.</p></div>
+    <div class="card"><h3>🤖 59 Live Commands</h3><p>Navigate, click, fill, extract, screenshot, PDF, tabs, contexts, agent tabs, pause/resume HUD — all JSON-in/JSON-out for agent integration.</p></div>
+    <div class="card"><h3>🔍 Web Search</h3><p>DuckDuckGo HTML, Brave, and SearXNG with a transparent fallback chain. No API keys needed.</p></div>
+    <div class="card"><h3>📸 Screenshots &amp; PDF</h3><p>Auto-screenshot on load, or ad-hoc. Full page, viewport, element, region — PNG, JPEG, or PDF export.</p></div>
+    <div class="card"><h3>🕷️ Scraping Tools</h3><p>dataforthai.com directory scraper with batch runner, resumability, and list-only fast mode. Extract CSS, tables, links, regex, page JSON via CLI.</p></div>
+    <div class="card"><h3>🗄️ DuckDB Datastore</h3><p>Local analytical storage with <code>db-insert</code>, <code>db-select</code>, <code>db-query</code> commands. Works with no browser running.</p></div>
+    <div class="card"><h3>🔗 Password-Gated Tunnels</h3><p>Expose local ports as shareable URLs via Cloudflare, ngrok, or custom providers — password enforced locally, not by the provider.</p></div>
+  </div>
 </div></section>
-<section id="stack"><div class="wrap"><h2>The Stack</h2><p class="sub">How ServerBrowser keeps Chrome real, persistent, and hard to detect.</p><table><thead><tr><th>Layer</th><th>What it does</th></tr></thead><tbody>
-<tr><td><code>stealth.js</code></td><td>Init script injected before page scripts — patches webdriver, chrome object, WebGL, plugins, permissions, UA</td></tr>
-<tr><td><code>vnc-driver.js</code></td><td>Launches headed Chrome with stealth + HUD, exposes CDP port, stays running for live attach</td></tr>
-<tr><td><code>live.js</code></td><td>59 commands over CDP — navigation, interaction, extraction, screenshots, tabs, datastore, tunnels</td></tr>
-<tr><td><code>connect.js</code></td><td>Same commands against a remote Chrome via <code>CDP_URL</code> — no local browser needed</td></tr>
-<tr><td><code>live-run.js</code></td><td>Intercepts <code>chromium.launch()</code> in stored scripts and redirects to the live browser</td></tr>
-<tr><td><code>standalone/</code></td><td>Scriptable CLI: browser, tunnel, AI, and API key groups — all JSON-in/JSON-out</td></tr>
-<tr><td><code>datastore/</code></td><td>DuckDB-backed local storage — works with no browser, no network</td></tr>
-</tbody></table></div></section>
-<section id="docs"><div class="wrap"><h2>Documentation</h2><p class="sub">Start with the quickstart, then go as deep as you need.</p><div class="dg">
-<a class="dl" href="docs-html/quickstart.html"><span class="t">Quickstart</span><span class="d">5-minute tour of the most useful commands</span></a>
-<a class="dl" href="docs-html/installation.html"><span class="t">Installation</span><span class="d">Prerequisites, install, verify</span></a>
-<a class="dl" href="docs-html/LIVE-DRIVE.html"><span class="t">Live Drive</span><span class="d">The full VNC + CDP live stack</span></a>
-<a class="dl" href="docs-html/cli.html"><span class="t">CLI Reference</span><span class="d">Every flag, every example</span></a>
-<a class="dl" href="docs-html/api.html"><span class="t">Library API</span><span class="d">launch(), search(), screenshot(), human</span></a>
-<a class="dl" href="docs-html/COMMANDS.html"><span class="t">Commands</span><span class="d">All 59+ live verbs with specs</span></a>
-<a class="dl" href="docs-html/stealth.html"><span class="t">Stealth</span><span class="d">What it patches and what it doesn't</span></a>
-<a class="dl" href="docs-html/troubleshooting.html"><span class="t">Troubleshooting</span><span class="d">Common problems and fixes</span></a>
-<a class="dl" href="docs-html/index.html"><span class="t">All Docs →</span><span class="d">Full sidebar with every page</span></a>
-</div></div></section>
-<footer><div class="wrap"><p>ServerBrowser — stealth, persistent, real-Chrome browsing for Node.js.</p><div class="fl"><a href="https://github.com/willdebonaire/ServerBrowser2">GitHub</a><a href="docs-html/index.html">Docs</a><a href="https://github.com/willdebonaire/ServerBrowser2/issues">Issues</a></div></div></footer>
+
+<section id="live"><div class="wrap">
+  <h2>Live Mode</h2>
+  <p class="sub">One command starts the full stack: virtual display, real Chrome, VNC viewer, and CDP endpoint.</p>
+  <div class="steps">
+    <div class="step"><div class="n">01</div><h4>npm run vnc</h4><p>Launches Xvfb + headed Chrome + x11vnc + noVNC on one command.</p></div>
+    <div class="step"><div class="n">02</div><h4>Watch &amp; Drive</h4><p>Open the noVNC viewer to see the screen. Attach over CDP and drive it live — commands return JSON.</p></div>
+    <div class="step"><div class="n">03</div><h4>HUD + Pause/Resume</h4><p>An overlay HUD shows current action, progress, and notifications. Pause to hand control to a human.</p></div>
+    <div class="step"><div class="n">04</div><h4>Store &amp; Reuse</h4><p>Save to DuckDB, store scripts for <code>live-run</code>, relaunch against the same persistent profile.</p></div>
+  </div>
+</div></section>
+
+<section id="human"><div class="wrap">
+  <h2>Human in the Loop</h2>
+  <p class="sub">The agent drives. You step in when it matters.</p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start">
+    <div>
+      <div class="step" style="margin-bottom:16px">
+        <h4>Agent handles the routine</h4>
+        <p>Navigation, form filling, clicking, extracting data, taking screenshots — the agent does the repetitive work so you don't have to. Every action returns JSON, so you can pipe it into your own pipelines.</p>
+      </div>
+      <div class="step" style="margin-bottom:16px">
+        <h4>You take over with pause</h4>
+        <p>Hit <code>npm run live -- pause</code> and the agent stops. A HUD overlay appears on the VNC screen with a Resume button. You solve the CAPTCHA, pick the right option, or make the call — then click Resume and the agent picks up right where it left off.</p>
+      </div>
+      <div class="step">
+        <h4>Persistent state means no lost work</h4>
+        <p>Cookies, sessions, and login state survive across runs. Solve a CAPTCHA once in headed mode, and the agent inherits that clean session every time it relaunches.</p>
+      </div>
+    </div>
+    <div>
+      <img src="assets/vnc-apple.png" alt="ServerBrowser driving Chrome over VNC — browsing apple.com" style="width:100%;border-radius:10px;border:1px solid var(--line);box-shadow:0 4px 24px rgba(0,0,0,.4)">
+      <p style="font-size:13px;color:var(--muted);margin-top:10px;text-align:center">Real headed Chrome driving apple.com over VNC — 1280×800, full stealth layer active</p>
+    </div>
+  </div>
+</div></section>
+
+<section id="stack"><div class="wrap">
+  <h2>The Stack</h2>
+  <p class="sub">How ServerBrowser keeps Chrome real, persistent, and hard to detect.</p>
+  <table>
+    <thead><tr><th>Layer</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>stealth.js</code></td><td>Init script injected before page scripts — patches webdriver, chrome object, WebGL, plugins, permissions, UA</td></tr>
+      <tr><td><code>vnc-driver.js</code></td><td>Launches headed Chrome with stealth + HUD, exposes CDP port, stays running for live attach</td></tr>
+      <tr><td><code>live.js</code></td><td>59 commands over CDP — navigation, interaction, extraction, screenshots, tabs, datastore, tunnels</td></tr>
+      <tr><td><code>connect.js</code></td><td>Same commands against a remote Chrome via <code>CDP_URL</code> — no local browser needed</td></tr>
+      <tr><td><code>live-run.js</code></td><td>Intercepts <code>chromium.launch()</code> in stored scripts and redirects to the live browser</td></tr>
+      <tr><td><code>standalone/</code></td><td>Scriptable CLI: browser, tunnel, AI, and API key groups — all JSON-in/JSON-out</td></tr>
+      <tr><td><code>datastore/</code></td><td>DuckDB-backed local storage — works with no browser, no network</td></tr>
+    </tbody>
+  </table>
+</div></section>
+
+<section id="docs"><div class="wrap">
+  <h2>Documentation</h2>
+  <p class="sub">Start with the quickstart, then go as deep as you need.</p>
+  <div class="dg">
+    <a class="dl" href="docs-html/quickstart.html"><span class="t">Quickstart</span><span class="d">5-minute tour of the most useful commands</span></a>
+    <a class="dl" href="docs-html/installation.html"><span class="t">Installation</span><span class="d">Prerequisites, install, verify</span></a>
+    <a class="dl" href="docs-html/LIVE-DRIVE.html"><span class="t">Live Drive</span><span class="d">The full VNC + CDP live stack</span></a>
+    <a class="dl" href="docs-html/cli.html"><span class="t">CLI Reference</span><span class="d">Every flag, every example</span></a>
+    <a class="dl" href="docs-html/api.html"><span class="t">Library API</span><span class="d">launch(), search(), screenshot(), human</span></a>
+    <a class="dl" href="docs-html/COMMANDS.html"><span class="t">Commands</span><span class="d">All 59+ live verbs with specs</span></a>
+    <a class="dl" href="docs-html/stealth.html"><span class="t">Stealth</span><span class="d">What it patches and what it doesn't</span></a>
+    <a class="dl" href="docs-html/troubleshooting.html"><span class="t">Troubleshooting</span><span class="d">Common problems and fixes</span></a>
+    <a class="dl" href="docs-html/index.html"><span class="t">All Docs →</span><span class="d">Full sidebar with every page</span></a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <p>ServerBrowser — stealth, persistent, real-Chrome browsing for Node.js.</p>
+  <div class="fl">
+    <a href="https://github.com/willdebonaire/ServerBrowser2">GitHub</a>
+    <a href="docs-html/index.html">Docs</a>
+    <a href="https://github.com/willdebonaire/ServerBrowser2/issues">Issues</a>
+  </div>
+</div></footer>
+
+<script>
+/* ---- Animated starfield ---- */
+(function initStars(){
+  var canvas = document.getElementById('star-canvas');
+  var starCount = 260;
+  for (var i = 0; i < starCount; i++) {
+    var s = document.createElement('div');
+    s.className = 'stars';
+    var x = Math.random() * 100;
+    var y = Math.random() * 100;
+    var size = Math.random() * 2.2;
+    s.style.left = x + 'vw';
+    s.style.top = y + 'vh';
+    s.style.width = size + 'px';
+    s.style.height = size + 'px';
+    s.style.animationDelay = (Math.random() * 3) + 's';
+    s.style.animationDuration = (2 + Math.random() * 3) + 's';
+    canvas.appendChild(s);
+  }
+})();
+
+/* ---- Custom cursor + mouse effects ---- */
+(function initCursor(){
+  var cursor = document.getElementById('custom-cursor');
+  var last = {x:0, y:0};
+  var trails = [];
+  var trailCount = 8;
+
+  function createTrail(x, y){
+    var t = document.createElement('div');
+    t.className = 'cursor-trail';
+    t.style.left = x + 'px';
+    t.style.top = y + 'px';
+    document.body.appendChild(t);
+    trails.push({el:t, x:x, y:y, life:0});
+    if (trails.length > trailCount) {
+      var old = trails.shift();
+      if (old.el.parentNode) old.el.parentNode.removeChild(old.el);
+    }
+  }
+
+  function sparkle(x, y){
+    if (Math.random() > 0.5) return;
+    var g = document.createElement('div');
+    g.className = 'glimmer';
+    g.style.left = (x - 4) + 'px';
+    g.style.top = (y - 4) + 'px';
+    document.body.appendChild(g);
+    setTimeout(function(){ if (g.parentNode) g.parentNode.removeChild(g); }, 900);
+  }
+
+  document.addEventListener('mousemove', function(e){
+    last.x = e.clientX;
+    last.y = e.clientY;
+    cursor.style.left = e.clientX + 'px';
+    cursor.style.top = e.clientY + 'px';
+
+    // create trailing dots
+    createTrail(e.clientX, e.clientY);
+
+    // update existing trails to drift/fade
+    trails.forEach(function(t, i){
+      var age = t.life + 1;
+      t.life = age;
+      var drift = 12 - age;
+      t.el.style.left = (t.x + (Math.random()-0.5)*drift) + 'px';
+      t.el.style.top = (t.y + (Math.random()-0.5)*drift) + 'px';
+      t.el.style.opacity = Math.max(0, 0.8 - age/12);
+      if (age > 12) {
+        if (t.el.parentNode) t.el.parentNode.removeChild(t.el);
+        trails.splice(i, 1);
+      }
+    });
+
+    // random sparkle on fast movement
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 20) sparkle(e.clientX, e.clientY);
+  });
+
+  document.addEventListener('mouseleave', function(){
+    cursor.style.opacity = '0';
+    trails.forEach(function(t){ t.el.classList.add('fade'); });
+  });
+  document.addEventListener('mouseenter', function(){
+    cursor.style.opacity = '1';
+  });
+
+  // cursor grows on links
+  var hoverables = document.querySelectorAll('a, .btn, .card, .dl, .step');
+  hoverables.forEach(function(el){
+    el.addEventListener('mouseenter', function(){ cursor.style.width='34px';cursor.style.height='34px';cursor.style.borderColor='var(--pink)';cursor.style.boxShadow='0 0 12px var(--pink),inset 0 0 6px var(--pink)'; });
+    el.addEventListener('mouseleave', function(){ cursor.style.width='22px';cursor.style.height='22px';cursor.style.borderColor='var(--pink)';cursor.style.boxShadow='0 0 12px var(--pink),inset 0 0 6px var(--pink)'; });
+  });
+})();
+
+/* ---- Parallax on mouse move (hero section) ---- */
+(function initParallax(){
+  var hero = document.querySelector('header');
+  if (!hero) return;
+  var bg = document.getElementById('nebula');
+  document.addEventListener('mousemove', function(e){
+    var x = (e.clientX / window.innerWidth - 0.5) * 2;
+    var y = (e.clientY / window.innerHeight - 0.5) * 2;
+    if (bg) bg.style.transform = 'translate(' + (x*12) + 'px,' + (y*10) + 'px) scale(1.05)';
+  });
+})();
+</script>
 </body>
 </html>
