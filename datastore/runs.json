@@ -1,0 +1,45 @@
+{
+  "runs": [
+    {
+      "id": "run_mvvdaqov_1",
+      "script": "smoke.js",
+      "args": [
+        "hello",
+        "world 2"
+      ],
+      "session": "default",
+      "pid": 2933383,
+      "state": "done",
+      "exitCode": 0,
+      "startedAt": 1793388650143,
+      "endedAt": 1793388653597,
+      "error": null
+    },
+    {
+      "id": "run_mvvdcb7e_2",
+      "script": "slow.js",
+      "args": [],
+      "session": "default",
+      "pid": 2935021,
+      "state": "killed",
+      "exitCode": null,
+      "startedAt": 1793388723386,
+      "endedAt": 1793388724929,
+      "error": "killed by user"
+    },
+    {
+      "id": "run_mvwiw2lh_1",
+      "script": "test-script.js",
+      "args": [
+        "test"
+      ],
+      "session": "default",
+      "pid": 3795942,
+      "state": "error",
+      "exitCode": 1,
+      "startedAt": 1793458509605,
+      "endedAt": 1793458510715,
+      "error": "exit code 1"
+    }
+  ]
+}

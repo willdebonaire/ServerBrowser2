@@ -1,0 +1,19 @@
+{
+  "browsers": [
+    {
+      "id": "testbr",
+      "label": "Test Browser v2",
+      "browser": "chrome",
+      "screen": "1600x900x24",
+      "profile": "",
+      "startUrl": "",
+      "webPort": null,
+      "rfbPort": null,
+      "cdpPort": null,
+      "display": null,
+      "localChrome": false,
+      "localChromePort": null,
+      "vncPassword": false
+    }
+  ]
+}

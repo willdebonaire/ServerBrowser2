@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ServerBrowser — Documentation</title>
+<style>
+  :root{
+    --bg:#050112;
+    --panel:#0d0a1f;
+    --line:#2a1a4a;
+    --text:#e2e8f0;
+    --muted:#a4b0c4;
+    --accent:#06d6fd;
+    --pink:#ff00ea;
+    --nebula:#7b2cbf;
+    --green:#34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; padding: 24px;
+    color: var(--text);
+    background: radial-gradient(ellipse at 50% 30%,#0c001f 0%,var(--bg) 65%),
+                radial-gradient(circle at 85% 20%,#7b2cbf22 0%,transparent 55%),
+                radial-gradient(circle at 70% 70%,#06d6fd11 0%,transparent 50%);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+    overflow-x: hidden;
+  }
+  /* starfield */
+  body::before {
+    content:'';
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100%;
+    background:
+      radial-gradient(2px,rgba(6,214,253,.5) 0%,transparent 70%),
+      radial-gradient(2px,rgba(255,0,234,.4) 0%,transparent 70%),
+      radial-gradient(1px,rgba(123,44,191,.3) 0%,transparent 70%);
+    background-size:26px 26px,42px 42px,26px 26px;
+    background-position:0 0,5px 5px,15px 15px;
+    z-index:0;
+    pointer-events:none;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--pink); text-shadow:0 0 8px var(--pink); }
+  pre { background: linear-gradient(145deg,#0d0a1f,#13102a); color: #e2e8f0; padding: 16px; border-radius: 8px; overflow-x: auto; border:1px solid var(--line); }
+  code { background: rgba(255,0,234,.08); color: var(--green); padding: 2px 6px; border-radius: 4px; font-size: 0.95em; }
+  pre code { background: transparent; padding: 0; color: #e2e8f0; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; }
+  th { color: var(--accent); background: rgba(6,214,253,.06); }
+  blockquote { border-left: 4px solid var(--pink); padding-left: 16px; color: var(--muted); margin-left: 0; }
+  img { max-width: 100%; border-radius: 8px; }
+  .back {
+    display: inline-block;
+    margin-bottom: 16px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  h1 { color: #f8fafc; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  h2 { color: var(--accent); margin-top: 28px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  h3 { color: var(--pink); }
+  wrapper { position: relative; z-index: 1; max-width: 960px; margin: 0 auto; }
+</style>
+</head>
+<body>
+  <wrapper>
+  <a class="back" href="index.html">&larr; Back to docs</a>
+  <h1>Web Control Panel — Proposed Features</h1>
+<blockquote>
+<p><strong>STATUS: PROPOSED.</strong> Nothing in this document is implemented. It follows the
+same convention as the <code>PROPOSED</code> sections in
+<a href="COMMANDS.md"><code>COMMANDS.md</code></a>: specified here so it is never mistaken for
+working code. The actionable work items live in
+<a href="../TODO.md"><code>../TODO.md</code></a>.</p>
+</blockquote>
+<p>The goal is a <strong>local web interface</strong> that operates the whole ServerBrowser
+stack — live sessions, stored scripts, VNC, and browser instances — without
+dropping to a terminal.</p>
+<hr>
+<h2>1. Goals and non-goals</h2>
+<h3>Goals</h3>
+<ul>
+<li>One page to see every <strong>live session</strong> and act on it: start, restart, shut
+down, inspect health.</li>
+<li>Manage the <strong>stored scripts</strong> in <code>user-scripts/</code>: list, view, edit, create,
+delete, and run them against a chosen live session (reusing
+<code>scripts/live-run.js</code> semantics: attach over CDP, suppress <code>browser.close()</code>).</li>
+<li><strong>VNC controls</strong>: open the noVNC viewer, embed it inline, change the VNC
+password, and adjust viewer/display settings (screen size, quality, scale).</li>
+<li><strong>Add and manage new browsers</strong>: several concurrent headed instances, each
+with its own ports, profile, browser type and resolution — including
+attaching to an already-running Chrome (<code>--local-chrome</code> mode).</li>
+<li>A JSON <strong>API</strong> behind the UI so the same operations are scriptable/agentable,
+consistent with the project&#39;s JSON-in/JSON-out philosophy.</li>
+</ul>
+<h3>Non-goals (v1)</h3>
+<ul>
+<li>Remote multi-user access, accounts, or roles — the panel binds to
+<code>127.0.0.1</code> by default with an optional shared token (same idea as the
+password-gated tunnel in <code>scripts/tunnel-auth-proxy.js</code>).</li>
+<li>Replacing the CLI. <code>npm run vnc</code>, <code>npm run live</code>, <code>npm run live-run</code> keep
+working exactly as documented; the panel is another client of the same
+machinery.</li>
+<li>A frontend framework. Per repo convention the UI is static HTML + vanilla JS
+(same styling vocabulary as <code>vnc-web/index.html</code>), served by the panel.</li>
+</ul>
+<hr>
+<h2>2. Proposed architecture</h2>
+<p>New files (nothing existing is rewritten beyond the noted refactor):</p>
+<pre><code>control/
+├── panel-server.js        # plain Node `http` server: static UI + JSON API + SSE
+├── lib/
+│   ├── session-manager.js # spawn/supervise vnc-server.sh, port allocation, health
+│   ├── script-manager.js  # CRUD + run over user-scripts/, log capture
+│   ├── browser-registry.js# browser definitions (name, type, profile, ports…)
+│   ├── vnc-control.js     # x11vnc password store/restart, viewer link builder
+│   └── state.js           # read/write datastore state files (0600)
+└── public/                # static panel UI (index.html, app.js, style.css)
+
+datastore/
+├── sessions.json          # running/known sessions (name, ports, pids, config)
+├── browsers.json          # saved browser definitions
+└── vnc-passwd/&lt;session&gt;   # x11vnc password files, mode 0600
+</code></pre>
+<p>State files follow the existing <code>datastore/tunnel-state.json</code> precedent: JSON,
+written with mode <code>0600</code>, safe to read from a different process minutes later.</p>
+<p><strong>Why plain <code>http</code>:</strong> the dependency set is <code>duckdb, marked, playwright, puppeteer</code> — no Express. The panel uses Node built-ins only (plus <code>marked</code>,
+already a dependency, to preview Markdown notes next to scripts).</p>
+<h3>Session model</h3>
+<p>A session is one supervised run of the (refactored) VNC stack:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>name</code></td>
+<td>human id, unique</td>
+<td><code>default</code></td>
+</tr>
+<tr>
+<td><code>webPort</code></td>
+<td>websockify / noVNC port</td>
+<td><code>6080</code></td>
+</tr>
+<tr>
+<td><code>rfbPort</code></td>
+<td>x11vnc port</td>
+<td><code>5900</code></td>
+</tr>
+<tr>
+<td><code>cdpPort</code></td>
+<td>Chrome DevTools port</td>
+<td><code>9222</code></td>
+</tr>
+<tr>
+<td><code>display</code></td>
+<td>Xvfb display number</td>
+<td><code>:10</code></td>
+</tr>
+<tr>
+<td><code>screen</code></td>
+<td><code>WIDTHxHEIGHTxDEPTH</code></td>
+<td><code>1280x800x24</code></td>
+</tr>
+<tr>
+<td><code>browser</code></td>
+<td><code>chrome | chromium | firefox</code></td>
+<td><code>chrome</code></td>
+</tr>
+<tr>
+<td><code>profile</code></td>
+<td>Chrome <code>user-data-dir</code></td>
+<td><code>./profile</code> (session 1), <code>./profile/&lt;name&gt;</code> (others)</td>
+</tr>
+<tr>
+<td><code>startUrl</code></td>
+<td>first tab</td>
+<td><code>http://127.0.0.1:&lt;webPort&gt;/</code></td>
+</tr>
+<tr>
+<td><code>localChrome</code></td>
+<td>attach instead of launch (port or auto)</td>
+<td>off</td>
+</tr>
+<tr>
+<td><code>vncPassword</code></td>
+<td>set ⇒ x11vnc runs with <code>-rfbauth</code></td>
+<td>unset (<code>-nopw</code>, today&#39;s behaviour)</td>
+</tr>
+</tbody></table>
+<p>Concurrency constraint: <strong>one Chrome per profile dir</strong> (Chrome takes a lock),
+so every concurrent session gets its own profile directory unless it
+explicitly opts into the shared <code>./profile</code>.</p>
+<hr>
+<h2>3. Features</h2>
+<h3>F1 — Live session management</h3>
+<ul>
+<li><strong>Session list</strong> with live status: <code>starting → running → degraded → stopped</code>,
+derived from process liveness + health probes (CDP <code>GET /json/version</code>, web
+port <code>GET /</code>).</li>
+<li>Per session: name, ports, display, resolution, browser type, profile path,
+uptime, current URL/title (from CDP), and a link to its viewer.</li>
+<li><strong>Start a new session</strong> from the UI with a form for every model field, plus
+resolution presets (<code>1280x800</code>, <code>1920x1080</code>, <code>2560x1440</code>, custom).</li>
+<li><strong>Restart</strong> = stop + start <em>the same session with the same config</em> (profile
+and therefore cookies/logins survive — same guarantee as today&#39;s relaunch).</li>
+<li><strong>Shut down</strong> = terminate the session&#39;s process group so <code>vnc-server.sh</code>&#39;s
+<code>cleanup</code> trap tears down Xvfb/websockify/x11vnc/Chrome in order.</li>
+<li>Port allocation: explicit ports as typed, otherwise pick free ports per
+session (<code>6080/5900/9222</code> + offset, verified with a bind test) and record
+them in <code>datastore/sessions.json</code>.</li>
+<li>Adopt sessions started outside the panel (detect <code>vnc-server.sh</code>, Xvfb/
+x11vnc/websockify/Chrome by process match + port probes) as <code>unmanaged</code>,
+shown read-only until adopted.</li>
+</ul>
+<h3>F2 — Server lifecycle controls (start / restart / shut down)</h3>
+<ul>
+<li>Buttons per session: <strong>Start</strong>, <strong>Restart</strong>, <strong>Shut down</strong>, with a
+confirmation step for destructive actions and disabled states while an
+operation is in flight.</li>
+<li>Global actions: <strong>Start new session</strong>, <strong>Restart all</strong>, <strong>Shut down all</strong>
+(double confirm).</li>
+<li>Operations are asynchronous with job status: the API returns <code>202</code> + a
+<code>jobId</code>; progress/events stream over SSE so the UI shows &quot;restarting… ready&quot;
+and the resulting URLs without polling.</li>
+<li>Crash handling: if a supervised child dies unexpectedly, mark the session
+<code>degraded</code>, surface a stderr tail from the log, and offer Restart.</li>
+</ul>
+<h3>F3 — View VNC</h3>
+<ul>
+<li><strong>Open viewer</strong> button per session →
+<code>http://&lt;host&gt;:&lt;webPort&gt;/novnc/vnc.html</code> in a new tab (<code>REMOTE_ADDR</code>
+awareness as printed by <code>vnc-server.sh</code> today). <code>vnc.html</code> (not
+<code>vnc_auto.html</code>) because it accepts viewer settings via the query string.</li>
+<li><strong>Embed viewer</strong> — inline iframe toggle on the session card so the panel is
+the single dashboard (&quot;view only&quot; available via noVNC query options where
+the installed build supports it).</li>
+<li>Copyable viewer URL, instructions URL (<code>&lt;webPort&gt;/</code>), and CDP endpoint
+(<code>127.0.0.1:&lt;cdpPort&gt;</code>) per session, mirroring the startup banner.</li>
+<li>Optional shareable link through the existing tunnel
+(<code>scripts/tunnel.js tunnel-create … custom</code> + <code>tunnel-route</code> to the web
+port), reusing the local password gate.</li>
+</ul>
+<h3>F4 — Change VNC password</h3>
+<ul>
+<li>Set / change / clear the VNC password for a session from the UI.</li>
+<li>Mechanism: <code>x11vnc -storepasswd &lt;pw&gt; &lt;datastore/vnc-passwd/&lt;session&gt;&gt;</code>
+(file mode <code>0600</code>), then run x11vnc with <code>-rfbauth &lt;file&gt;</code> instead of the
+current <code>-nopw</code>.</li>
+<li><strong>Changing the password on a running session restarts only the x11vnc
+child</strong> — Xvfb, Chrome and the CDP session stay up; the viewer just
+reconnects. Clearing the password returns to <code>-nopw</code>.</li>
+<li>The password is write-only in the UI: never echoed back, never logged,
+never written to JSON state — only the passwd file path is stored.</li>
+<li>noVNC prompts for the password in the RFB handshake; the UI must not
+conflate this with the tunnel&#39;s <code>?pw=</code> HTTP gate.</li>
+</ul>
+<h3>F5 — noVNC / display settings</h3>
+<p>Per session, in the UI:</p>
+<ul>
+<li><strong>Screen size</strong>: presets + custom <code>WxH</code>, color depth (<code>16/24</code>). Changing it
+rewrites <code>SCREEN</code> and <strong>restarts the session</strong> — Xvfb fixes its screen
+geometry at startup; the Chrome window/viewport follow automatically because
+<code>vnc-server.sh</code> derives them from the screen (single-source behaviour kept).</li>
+<li><strong>Viewer link options</strong> appended to the noVNC URL — <strong>verified against the
+installed noVNC build</strong> (<code>/usr/share/novnc</code>, symlinked at <code>vnc-web/novnc</code>):
+its <code>vnc.html</code> reads the query string first (<code>ui.js initSetting</code> →
+<code>getConfigVar</code>) and supports <code>resize=scale|remote|none</code> and <code>view_only=1</code>,
+surfaced in the UI as a &quot;Resize mode&quot; selector + &quot;view only&quot; checkbox.
+<code>quality</code>/<code>compression</code>/scale-factor were <strong>dropped after verification</strong>:
+this build exposes no such settings. The full <code>vnc.html</code> UI also offers its
+own toolbar (disconnect, ctrl-alt-del, etc.).</li>
+<li><strong>Start URL</strong> edit (applied on next start; optionally &quot;navigate now&quot; via the
+existing <code>goto</code> live command).</li>
+<li><strong>Browser type</strong> switch (<code>chrome | chromium | firefox</code>) — applied on restart.</li>
+<li>Saved as session defaults so a restart keeps them.</li>
+</ul>
+<h3>F6 — Script management (<code>user-scripts/</code>)</h3>
+<ul>
+<li><strong>List</strong> scripts in <code>user-scripts/</code> (name, size, mtime) — the folder stays
+gitignored exactly as today; the panel only manages files on disk.</li>
+<li><strong>View / edit</strong> in a textarea; README-style notes preview with the
+already-bundled <code>marked</code>.</li>
+<li><strong>Create / upload / rename / delete</strong> (delete behind confirmation; deletion
+moves to <code>user-scripts/.trash/</code> instead of unlinking).</li>
+<li><strong>Run</strong> a script against a chosen session: spawns
+<code>node scripts/live-run.js &lt;script&gt; [args]</code> with <code>CDP_URL</code> pointed at that
+session&#39;s CDP port, args parsed from a free-text field (same argv
+passthrough as <code>npm run live-run -- &lt;script&gt; &lt;args&gt;</code>).</li>
+<li><strong>Run history</strong>: per run — script, args, session, start/end, exit code, and
+captured stdout/stderr, viewable while running (SSE) and after (tail stored
+under <code>datastore/run-logs/</code>).</li>
+<li>Concurrency guard per session (default: one script run at a time per
+session; queue or reject) while live commands remain available.</li>
+<li>Kill a running script — the browser survives by construction
+(<code>live-run.js</code> already suppresses <code>browser.close()</code>).</li>
+</ul>
+<h3>F7 — Add / manage new browsers</h3>
+<p>A <strong>browser definition</strong> is a reusable template for a session:</p>
+<ul>
+<li>Fields: name, browser type, profile dir (create-new or existing), default
+resolution, start URL, port overrides, <code>localChrome</code> attach settings, VNC
+password on/off.</li>
+<li><strong>Add / edit / duplicate / delete</strong> definitions from the UI; list them on a
+&quot;Browsers&quot; page.</li>
+<li><strong>&quot;Launch&quot;</strong> a definition → creates a session from it (F1) in one click.</li>
+<li><strong>Local-Chrome attach mode</strong>: start the VNC stack without launching a
+browser (<code>--local-chrome [--local-chrome-port N]</code>) against an external
+Chrome — the panel probes for an available CDP port and offers the detected
+instances.</li>
+<li>Port/profile collision checks before launch with a clear error
+(&quot;profile in use by session <code>default</code>&quot;).</li>
+<li>Per-browser health: CDP reachable, process alive, and a one-click
+screenshot thumbnail (via the existing <code>screenshot</code> live command) as a
+&quot;what&#39;s on screen&quot; glance.</li>
+</ul>
+<h3>F8 — Live status, logs, and events</h3>
+<ul>
+<li><strong>SSE stream</strong> (<code>/api/events</code>): session state transitions, operation job
+progress, script-run log lines, health probes.</li>
+<li>Per-session <strong>log pane</strong> (combined stdout/stderr of the supervised stack,
+ring-buffered, last N lines on connect).</li>
+<li>Headline metrics per session: uptime, current URL/title, open tabs count
+(CDP <code>/json/list</code>), viewer/CDP reachability badges.</li>
+</ul>
+<h3>F9 — Security</h3>
+<ul>
+<li>Panel binds <code>127.0.0.1</code> by default; <code>PANEL_ADDR=0.0.0.0</code> requires a token.</li>
+<li>Optional shared token (env <code>PANEL_TOKEN</code>, or generated into
+<code>datastore/panel-state.json</code> 0600) — same HTTP-Basic-or-<code>?pw=</code> pattern as
+<code>scripts/tunnel-auth-proxy.js</code>, since noVNC/WebSockets cannot send headers.</li>
+<li>CSRF protection: <code>Origin</code>/<code>Host</code> check + same-site cookie for state-changing
+<code>POST/PUT/DELETE</code>.</li>
+<li>Path-traversal hardening on every script file operation (resolve + prefix
+check against <code>user-scripts/</code>) and a filename allowlist.</li>
+<li>Destructive endpoints (shutdown, delete script, clear password) require an
+explicit confirmation payload; everything is audited to a local log.</li>
+<li>CDP stays loopback-only as today (<code>127.0.0.1:&lt;cdpPort&gt;</code>); the panel proxies
+only what it needs (URL/title/screenshot), never exposing raw CDP off-host.</li>
+</ul>
+<hr>
+<h2>4. Proposed API surface</h2>
+<p>All JSON. <code>202</code> + <code>{jobId}</code> for long-running operations; events on
+<code>GET /api/events</code> (SSE).</p>
+<table>
+<thead>
+<tr>
+<th>Method &amp; path</th>
+<th>Does</th>
+<th>Feature</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET  /api/sessions</code></td>
+<td>list sessions + health</td>
+<td>F1</td>
+</tr>
+<tr>
+<td><code>POST /api/sessions</code></td>
+<td>start new session (model fields)</td>
+<td>F1, F2</td>
+</tr>
+<tr>
+<td><code>GET  /api/sessions/:name</code></td>
+<td>one session detail</td>
+<td>F1</td>
+</tr>
+<tr>
+<td><code>POST /api/sessions/:name/restart</code></td>
+<td>restart with same config</td>
+<td>F2</td>
+</tr>
+<tr>
+<td><code>DELETE /api/sessions/:name</code></td>
+<td>shut down (process group)</td>
+<td>F2</td>
+</tr>
+<tr>
+<td><code>GET  /api/sessions/:name/status</code></td>
+<td>probe: process + CDP + web</td>
+<td>F1</td>
+</tr>
+<tr>
+<td><code>GET  /api/sessions/:name/logs</code></td>
+<td>recent log lines (SSE or JSON)</td>
+<td>F8</td>
+</tr>
+<tr>
+<td><code>GET  /api/sessions/:name/viewer-url</code></td>
+<td>noVNC URL incl. options</td>
+<td>F3, F5</td>
+</tr>
+<tr>
+<td><code>PUT  /api/sessions/:name/vnc-password</code></td>
+<td>set/change password</td>
+<td>F4</td>
+</tr>
+<tr>
+<td><code>DELETE /api/sessions/:name/vnc-password</code></td>
+<td>clear → <code>-nopw</code></td>
+<td>F4</td>
+</tr>
+<tr>
+<td><code>PATCH /api/sessions/:name/settings</code></td>
+<td>screen, viewer opts, start URL</td>
+<td>F5</td>
+</tr>
+<tr>
+<td><code>GET  /api/scripts</code></td>
+<td>list <code>user-scripts/</code></td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>POST /api/scripts</code></td>
+<td>create script</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>GET/PUT/DELETE /api/scripts/:name</code></td>
+<td>read / update / delete (trash)</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>POST /api/scripts/:name/run</code></td>
+<td>run via <code>live-run.js</code> on a session</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>GET  /api/runs</code> / <code>GET /api/runs/:id</code></td>
+<td>run history + logs</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>DELETE /api/runs/:id</code></td>
+<td>kill a running script</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><code>GET/POST /api/browsers</code></td>
+<td>list / add browser definitions</td>
+<td>F7</td>
+</tr>
+<tr>
+<td><code>PUT/DELETE /api/browsers/:id</code></td>
+<td>edit / delete definition</td>
+<td>F7</td>
+</tr>
+<tr>
+<td><code>POST /api/browsers/:id/launch</code></td>
+<td>create session from definition</td>
+<td>F7</td>
+</tr>
+<tr>
+<td><code>POST /api/browsers/attach-local</code></td>
+<td>start stack in <code>--local-chrome</code> mode</td>
+<td>F7</td>
+</tr>
+<tr>
+<td><code>GET  /api/jobs/:id</code></td>
+<td>job status</td>
+<td>F2</td>
+</tr>
+<tr>
+<td><code>GET  /api/events</code></td>
+<td>SSE: state, jobs, logs</td>
+<td>F8</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>5. Constraints and honest limitations</h2>
+<p>These shape the design and must stay visible in the UI:</p>
+<ol>
+<li><strong>Screen size changes require a session restart.</strong> Xvfb fixes its screen at
+startup. Profile state survives restarts (cookies/logins), so a restart is
+cheap — but the viewer drops for a few seconds.</li>
+<li><strong>Multi-session needs a <code>vnc-server.sh</code> refactor.</strong> Its cleanup runs
+<code>pkill -f &quot;scripts/vnc-driver.js&quot;</code> with no display/port scoping, so stopping
+one session would kill <em>every</em> session&#39;s driver. Cleanup must become
+per-session (kill the tracked process group only) before concurrent sessions
+are safe. The <code>x11vnc</code>/<code>websockify</code>/<code>Xvfb</code> pkill patterns are already
+display/port-scoped and can stay as a fallback.</li>
+<li><strong>One Chrome per profile dir.</strong> Concurrent sessions need separate
+<code>user-data-dir</code>s; the shared <code>./profile</code> belongs to a single session.</li>
+<li><strong>No Express.</strong> Panel = Node <code>http</code> + static assets, consistent with the
+current dependency set.</li>
+<li><strong>x11vnc runs <code>-nopw</code> today.</strong> F4 introduces <code>-rfbauth</code>; until it ships,
+&quot;change password&quot; should be hidden rather than faked.</li>
+<li><strong>VNC password ≠ tunnel password.</strong> They are separate mechanisms (RFB auth
+vs. HTTP gate) and the UI must not conflate them.</li>
+<li><strong><code>user-scripts/</code> is intentionally uncommitted</strong> — the panel manages local
+files only; nothing there is pushed to the remote.</li>
+<li><strong><code>local-chrome</code> sessions don&#39;t own their browser</strong> — the panel can restart
+the VNC stack around them, but shutting down an attached Chrome is out of
+scope (it wasn&#39;t started by us).</li>
+</ol>
+<hr>
+<h2>6. Phasing (mirrors <code>../TODO.md</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Delivers</th>
+<th>Features</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>P0</strong></td>
+<td>Panel skeleton: <code>http</code> server, static UI, state module, health probes</td>
+<td>scaffolding</td>
+</tr>
+<tr>
+<td><strong>P1</strong></td>
+<td>Session manager: start/stop/restart, per-session cleanup refactor, port allocation, <code>sessions.json</code></td>
+<td>F1, F2</td>
+</tr>
+<tr>
+<td><strong>P2</strong></td>
+<td>Sessions page + lifecycle buttons + SSE job/log events</td>
+<td>F1, F2, F8</td>
+</tr>
+<tr>
+<td><strong>P3</strong></td>
+<td>VNC controls: viewer links/embed, password set/change/clear, screen &amp; viewer settings</td>
+<td>F3, F4, F5</td>
+</tr>
+<tr>
+<td><strong>P4</strong></td>
+<td>Script manager: CRUD, run via <code>live-run.js</code>, logs/history/kill</td>
+<td>F6</td>
+</tr>
+<tr>
+<td><strong>P5</strong></td>
+<td>Browser registry: definitions, launch, local-chrome attach, collisions</td>
+<td>F7</td>
+</tr>
+<tr>
+<td><strong>P6</strong></td>
+<td>Security hardening: token, bind rules, CSRF, traversal tests</td>
+<td>F9</td>
+</tr>
+<tr>
+<td><strong>P7</strong></td>
+<td>Docs (<code>docs/</code> page + README pointer), smoke tests, <code>build-docs.js</code> pass</td>
+<td>docs</td>
+</tr>
+</tbody></table>
+<p>Each phase ends with a verifiable outcome — the acceptance steps are listed in
+<a href="../TODO.md"><code>../TODO.md</code></a>.</p>
+
+  </wrapper>
+</body>
+</html>

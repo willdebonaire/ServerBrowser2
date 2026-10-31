@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServerBrowser — Control Panel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='%2306d6fd'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ff00ea'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="star-canvas"></div>
+<div id="nebula"></div>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> ServerBrowser <span class="brand-sub">Control Panel</span></div>
+    <div class="nav-links">
+      <a href="#sessions" data-view="sessions" class="active">Sessions</a>
+      <a href="#scripts" data-view="scripts">Scripts</a>
+      <a href="#browsers" data-view="browsers">Browsers</a>
+      <a href="#settings" data-view="settings">Settings</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <span class="badge">Live Control Panel</span>
+    <h1>Run your browsers from <span class="a">one screen.</span></h1>
+    <p class="lede">Start, watch and stop live VNC sessions, push scripts at them, control every port and pixel — no terminal required.</p>
+    <div class="cta">
+      <button class="btn primary" id="btn-focus-new" type="button">+ New session</button>
+      <button class="btn ghost" id="btn-refresh" type="button">↻ Refresh</button>
+    </div>
+    <div class="status-strip" id="status-strip">
+      <span class="schip">panel <b id="st-panel">…</b></span>
+      <span class="schip">sessions <b id="st-sessions">0</b></span>
+      <span class="schip">live <b id="st-running">0</b></span>
+      <span class="schip">events <b id="st-sse">connecting…</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ============================ SESSIONS ============================ -->
+  <section id="view-sessions">
+    <h2>Sessions</h2>
+    <p class="sub">Every live stack — Xvfb, browser, x11vnc/noVNC and CDP. Start, restart or shut it down.</p>
+
+    <div class="card form-card" id="new-session-card">
+      <h3>Start a new session</h3>
+      <form id="new-session-form" autocomplete="off">
+        <div class="form-grid">
+          <label>Name
+            <input name="name" placeholder="default" pattern="[A-Za-z0-9_-]{1,32}">
+          </label>
+          <label>Browser
+            <select name="browser">
+              <option value="chrome">chrome (real Google Chrome)</option>
+              <option value="chromium">chromium</option>
+              <option value="firefox">firefox</option>
+            </select>
+          </label>
+          <label>Screen size
+            <select name="screen" id="ns-screen">
+              <option value="1280x800">1280 × 800</option>
+              <option value="1600x900">1600 × 900</option>
+              <option value="1920x1080" selected>1920 × 1080</option>
+              <option value="2560x1440">2560 × 1440</option>
+              <option value="custom">custom…</option>
+            </select>
+          </label>
+          <label id="ns-custom-wrap" hidden>Custom WxH
+            <input name="customScreen" placeholder="1440x900" pattern="\d{3,4}x\d{3,4}">
+          </label>
+          <label>Start URL
+            <input name="startUrl" placeholder="default per port">
+          </label>
+          <label>Profile <span class="hint">(empty = default)</span>
+            <input name="profile" placeholder="./profile/my-browser">
+          </label>
+        </div>
+        <details class="advanced">
+          <summary>Advanced — ports &amp; display (auto if empty)</summary>
+          <div class="form-grid">
+            <label>Web / noVNC port <input name="webPort" placeholder="auto 6080+i" inputmode="numeric"></label>
+            <label>RFB (x11vnc) port <input name="rfbPort" placeholder="auto 5900+i" inputmode="numeric"></label>
+            <label>CDP port <input name="cdpPort" placeholder="auto 9222+i" inputmode="numeric"></label>
+            <label>Display number <input name="display" placeholder="auto 10+i" inputmode="numeric"></label>
+          </div>
+        </details>
+        <div class="btnrow">
+          <button class="btn primary" type="submit">Start session</button>
+          <span class="muted" id="ns-msg"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="grid" id="sessions-grid"></div>
+    <div class="card empty" id="sessions-empty" hidden>
+      <p>No sessions yet. Start one above — or run <code>npm run vnc</code> in a terminal and the panel will adopt it.</p>
+    </div>
+  </section>
+
+  <!-- ============================ SCRIPTS (P4) ============================ -->
+  <section id="view-scripts" hidden>
+    <h2>Scripts</h2>
+    <p class="sub">Local-only <code>user-scripts/</code> — create, edit and run scripts on a live session via <code>live-run.js</code> (the browser never closes; deletes go to <code>.trash/</code>).</p>
+
+    <div class="card form-card" id="script-create-card">
+      <h3>New script</h3>
+      <form id="script-create-form" autocomplete="off">
+        <div class="form-grid">
+          <label>Name <input name="name" placeholder="my-script.js" pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,119}" required></label>
+        </div>
+        <div class="btnrow">
+          <button class="btn primary" type="submit">Create</button>
+          <span class="muted" id="sc-msg"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="grid" id="scripts-grid"></div>
+    <div class="card empty" id="scripts-empty" hidden>
+      <p>No scripts yet — create one above, or drop files into <code>user-scripts/</code>.</p>
+    </div>
+
+    <h2 style="margin-top:38px">Runs</h2>
+    <p class="sub">History of script runs — expand a run to watch its log. One active run per session.</p>
+    <div id="runs-list"></div>
+    <div class="card empty" id="runs-empty" hidden><p>No runs yet.</p></div>
+  </section>
+
+  <!-- ============================ BROWSERS (P5) ============================ -->
+  <section id="view-browsers" hidden>
+    <h2>Browsers</h2>
+    <p class="sub">Saved definitions — a reusable template (type, profile, screen, ports) that launches a full session in one click.</p>
+
+    <div class="card form-card">
+      <h3>New definition</h3>
+      <form id="browser-create-form" autocomplete="off">
+        <div class="form-grid">
+          <label>ID <input name="id" placeholder="scraper-1" pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,31}" required></label>
+          <label>Label <input name="label" placeholder="Scraping browser"></label>
+          <label>Browser
+            <select name="browser"><option value="chrome">chrome</option><option value="chromium">chromium</option><option value="firefox">firefox</option></select>
+          </label>
+          <label>Screen <input name="screen" value="1920x1080" pattern="\d{3,4}x\d{3,4}(x\d{1,2})?"></label>
+          <label>Profile <input name="profile" placeholder="(empty = default)"></label>
+          <label>Start URL <input name="startUrl" placeholder="(session default)"></label>
+        </div>
+        <label class="check-lbl"><span class="checkrow"><input type="checkbox" name="vncPassword"> Ask for a VNC password at launch</span></label>
+        <details class="advanced">
+          <summary>Advanced — port/display pinning (auto if empty)</summary>
+          <div class="form-grid">
+            <label>Web port <input name="webPort" inputmode="numeric" placeholder="auto"></label>
+            <label>RFB port <input name="rfbPort" inputmode="numeric" placeholder="auto"></label>
+            <label>CDP port <input name="cdpPort" inputmode="numeric" placeholder="auto"></label>
+            <label>Display <input name="display" inputmode="numeric" placeholder="auto"></label>
+          </div>
+        </details>
+        <div class="btnrow">
+          <button class="btn primary" type="submit">Save definition</button>
+          <span class="muted" id="br-msg"></span>
+        </div>
+      </form>
+    </div>
+
+    <div class="grid" id="browsers-grid"></div>
+    <div class="card empty" id="browsers-empty" hidden><p>No definitions yet — create one above.</p></div>
+
+    <div class="card" style="margin-top:24px" id="attach-card">
+      <h3>Attach to an already-running Chrome</h3>
+      <p>Start the VNC stack <b>without</b> launching a browser (<code>--local-chrome</code>) against a Chrome that already exposes CDP.</p>
+      <div class="btnrow" id="attach-row">
+        <button class="btn ghost" type="button" data-action="scan-local">↻ Scan CDP 9222–9224</button>
+        <span class="muted" id="attach-msg">not scanned yet</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================ SETTINGS (P6) ============================ -->
+  <section id="view-settings" hidden>
+    <h2>Settings</h2>
+    <p class="sub">Panel security &amp; runtime info.</p>
+    <div class="card">
+      <h3>Access control</h3>
+      <div class="meta" id="settings-meta"><div class="row"><span class="lbl">state</span><span class="val">loading…</span></div></div>
+      <p style="margin-top:10px">Open the panel with <code>http://127.0.0.1:6180/?pw=&lt;token&gt;</code> (sets a cookie) or send HTTP Basic with any username and the token as password (curl: <code>-u any:TOKEN</code>). Token lives in <code>datastore/panel-state.json</code> (0600). Loopback-only unless you bind with a token.</p>
+    </div>
+    <div class="card">
+      <h3>Runtime files</h3>
+      <p><code>datastore/sessions.json</code> · <code>datastore/browsers.json</code> · <code>datastore/runs.json</code> · <code>datastore/session-logs/</code> · <code>datastore/run-logs/</code> · <code>datastore/panel-audit.log</code> — all local, all gitignored, written 0600.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Sessions are detached &amp; survive a panel restart.</p>
+    <div class="fl"><a href="#sessions">Sessions</a></div>
+  </div>
+</footer>
+
+<div id="toasts" aria-live="polite"></div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box">
+    <h4 id="modal-title">Confirm</h4>
+    <p id="modal-text"></p>
+    <div class="btnrow right">
+      <button class="btn ghost" id="modal-cancel" type="button">Cancel</button>
+      <button class="btn danger" id="modal-ok" type="button">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
