@@ -28,7 +28,9 @@ That single command brings up everything and keeps running (blocking):
 | **CDP** endpoint | where Playwright attaches to drive it live | `http://127.0.0.1:9222/json/version` |
 
 While it's running it prints the viewer URL, the instructions URL and the CDP
-endpoint. Press **Ctrl-C** to stop the session. Stopping the session closes this
+endpoint. Stop the session from the **control panel** at
+<http://localhost:6180/> (`Shut down` next to the session), or press **Ctrl-C**
+in the terminal that runs `npm run vnc`. Stopping the session closes this
 Chrome (there is no other way it closes — scripts and live commands are
 suppressed from closing it).
 

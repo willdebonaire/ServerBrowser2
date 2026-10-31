@@ -14,6 +14,13 @@ screenshots/
 datastore/tunnel-state.json
 datastore/*.duckdb
 datastore/*.duckdb.wal
+# Control panel runtime state: session registry, session logs, VNC password
+# files (0600 — never commit credentials), per-session pid files, script run logs
+datastore/sessions.json
+datastore/session-logs/
+datastore/run-logs/
+datastore/vnc-passwd/
+datastore/pids/
 
 # Local API keys (real store is ~/.config/serverbrowser/api-keys.json, 0600)
 api-keys.json

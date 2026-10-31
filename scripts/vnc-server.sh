@@ -17,9 +17,15 @@
 #   PROFILE       Chrome user-data-dir (persistent)  (default ./profile)
 #   START_URL     first tab URL                      (default http://127.0.0.1:WEB_PORT/)
 #   NOVNC_SRC     noVNC install dir                  (default /usr/share/novnc)
+#   VNC_SESSION   session name (logs + pid files)    (default "default")
+#   VNC_PASSWD_FILE  if set AND the file exists, x11vnc runs with -rfbauth
+#                    instead of -nopw (VNC password; write it with
+#                    `x11vnc -storepasswd <pw> <file>`)
+#   PID_DIR       where per-session pid files go     (default datastore/pids/<VNC_SESSION>)
 #
 # Flags:
 #   --resolution WxH   shortcut for SCREEN=WxHx24
+#   --session NAME     shortcut for VNC_SESSION
 #
 set -euo pipefail
 
@@ -39,7 +45,15 @@ BROWSER="${BROWSER:-chrome}"
 LOCAL_CHROME="${LOCAL_CHROME:-0}"
 LOCAL_CHROME_PORT="${LOCAL_CHROME_PORT:-}"
 START_URL="${START_URL:-}"
+LOCAL_CHROME="${LOCAL_CHROME:-0}"
+LOCAL_CHROME_PORT="${LOCAL_CHROME_PORT:-}"
+VNC_SESSION="${VNC_SESSION:-default}"
+VNC_PASSWD_FILE="${VNC_PASSWD_FILE:-}"
 export DISPLAY
+
+# Session-tagged logger — the tag is read at call time so a later
+# `--session NAME` flag is reflected too.
+log() { echo "[vnc:${VNC_SESSION}] $*"; }
 
 usage() {
   cat <<'USAGE'
@@ -53,10 +67,11 @@ Flags:
   --cdp-port N            CDP port for the launched Chrome (default 9222)
   --profile PATH          Chrome user-data-dir (default ./profile)
   --start-url URL         first tab URL (default http://127.0.0.1:WEB_PORT/)
+  --session NAME          session name for logs + pid files (default "default")
   -h, --help              this help
 
 Env: WEB_PORT RFB_PORT CDP_PORT DISPLAY_NUM SCREEN RESOLUTION PROFILE START_URL BROWSER
-     LOCAL_CHROME LOCAL_CHROME_PORT NOVNC_SRC REMOTE_ADDR
+     LOCAL_CHROME LOCAL_CHROME_PORT NOVNC_SRC REMOTE_ADDR VNC_SESSION VNC_PASSWD_FILE PID_DIR
 USAGE
 }
 
@@ -75,6 +90,8 @@ while [ $# -gt 0 ]; do
     --profile)           PROFILE="${2:-}"; shift ;;
     --start-url=*)       START_URL="${1#--start-url=}" ;;
     --start-url)         START_URL="${2:-}"; shift ;;
+    --session=*)         VNC_SESSION="${1#--session=}" ;;
+    --session)           VNC_SESSION="${2:-}"; shift ;;
     --local-chrome)      LOCAL_CHROME=1 ;;
     --local-chrome-port=*) LOCAL_CHROME_PORT="${1#--local-chrome-port=}" ;;
     --local-chrome-port) LOCAL_CHROME_PORT="${2:-}"; shift ;;
@@ -119,15 +136,23 @@ fi
 
 pids=()
 
+# --- Per-session pid files (the control panel supervises sessions via these) ---
+PID_DIR="${PID_DIR:-${ROOT}/datastore/pids/${VNC_SESSION}}"
+mkdir -p "${PID_DIR}"
+echo $$ > "${PID_DIR}/session.pid"
+
 cleanup() {
   echo
-  echo "[vnc] shutting down (killing Xvfb, websockify, chrome, x11vnc)..."
+  log "shutting down (killing Xvfb, websockify, chrome, x11vnc)..."
   for pid in "${pids[@]:-}"; do kill "$pid" 2>/dev/null || true; done
-  pkill -f "scripts/vnc-driver.js"         2>/dev/null || true
+  # Scoped by THIS session's CDP port — never kill another session's driver
+  # (the old unscoped `pkill -f scripts/vnc-driver.js` broke multi-session).
+  pkill -f "scripts/vnc-driver.js --cdp-port ${CDP_PORT}" 2>/dev/null || true
   pkill -f "x11vnc -display ${DISPLAY}"    2>/dev/null || true
   pkill -f "websockify ${WEB_PORT}"        2>/dev/null || true
   pkill -f "Xvfb ${DISPLAY} "              2>/dev/null || true
   sleep 0.5
+  rm -rf "${PID_DIR}" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -138,16 +163,20 @@ if [ ! -e "${NOVNC_WEBROOT}/novnc" ]; then
 fi
 
 # 1) Virtual display
-echo "[vnc] Xvfb ${DISPLAY} (${SCREEN})"
+log "Xvfb ${DISPLAY} (${SCREEN})"
 Xvfb "${DISPLAY}" -screen 0 "${SCREEN}" -nolisten tcp &
-pids+=($!)
+XVFB_PID=$!
+pids+=("${XVFB_PID}")
+echo "${XVFB_PID}" > "${PID_DIR}/xvfb.pid"
 sleep 1
 
 # 2) Web + WebSocket server (serves instructions page + noVNC, proxies VNC)
 #    Without -D so it stays a child of this script (reliable cleanup via pids).
-echo "[vnc] websockify on :${WEB_PORT} -> vnc :${RFB_PORT} (web root: ${NOVNC_WEBROOT})"
+log "websockify on :${WEB_PORT} -> vnc :${RFB_PORT} (web root: ${NOVNC_WEBROOT})"
 websockify "${WEB_PORT}" --web="${NOVNC_WEBROOT}" 127.0.0.1:"${RFB_PORT}" >/dev/null 2>&1 &
-pids+=($!)
+WEBSOCKIFY_PID=$!
+pids+=("${WEBSOCKIFY_PID}")
+echo "${WEBSOCKIFY_PID}" > "${PID_DIR}/websockify.pid"
 sleep 1
 
 # 3) Headed browser via Playwright (persistent profile + CDP), or attach to an
@@ -162,21 +191,33 @@ DRIVER_ARGS=(
 if [ "${LOCAL_CHROME}" = "1" ]; then
   DRIVER_ARGS+=(--local-chrome)
   [ -n "${LOCAL_CHROME_PORT}" ] && DRIVER_ARGS+=(--local-chrome-port "${LOCAL_CHROME_PORT}")
-  echo "[vnc] local-chrome mode: attaching over CDP (no browser launch)"
+  log "local-chrome mode: attaching over CDP (no browser launch)"
 else
-  echo "[vnc] launching headed ${BROWSER} ${RESOLUTION} (CDP :${CDP_PORT}, profile: ${PROFILE})"
+  log "launching headed ${BROWSER} ${RESOLUTION} (CDP :${CDP_PORT}, profile: ${PROFILE})"
 fi
 node "${ROOT}/scripts/vnc-driver.js" "${DRIVER_ARGS[@]}" &
-pids+=($!)
+DRIVER_PID=$!
+pids+=("${DRIVER_PID}")
+echo "${DRIVER_PID}" > "${PID_DIR}/driver.pid"
 sleep 4
 
 # 4) VNC server on the display
-echo "[vnc] x11vnc on :${RFB_PORT} for ${DISPLAY}"
-x11vnc -display "${DISPLAY}" -rfbport "${RFB_PORT}" -nopw -forever -shared -quiet &
-pids+=($!)
+#    Auth: -rfbauth when a VNC password file exists, otherwise -nopw (legacy).
+#    (Set the password with: x11vnc -storepasswd <pw> <VNC_PASSWD_FILE>)
+RFB_AUTH=(-nopw)
+if [ -n "${VNC_PASSWD_FILE}" ] && [ -f "${VNC_PASSWD_FILE}" ]; then
+  RFB_AUTH=(-rfbauth "${VNC_PASSWD_FILE}")
+  log "x11vnc password auth enabled (${VNC_PASSWD_FILE})"
+fi
+log "x11vnc on :${RFB_PORT} for ${DISPLAY}"
+x11vnc -display "${DISPLAY}" -rfbport "${RFB_PORT}" "${RFB_AUTH[@]}" -forever -shared -quiet &
+X11VNC_PID=$!
+pids+=("${X11VNC_PID}")
+echo "${X11VNC_PID}" > "${PID_DIR}/x11vnc.pid"
 
 echo
 echo "========================================================================"
+echo "  Session      : ${VNC_SESSION}"
 echo "  VNC viewer   : http://${REMOTE_ADDR}:${WEB_PORT}/novnc/vnc_auto.html"
 echo "  Instructions : http://${REMOTE_ADDR}:${WEB_PORT}/"
 echo "  CDP endpoint : http://127.0.0.1:${CDP_PORT}/json/version  (localhost only)"

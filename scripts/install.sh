@@ -313,8 +313,15 @@ main() {
     echo "  2. Try the VNC live browser:"
     echo "     npm run vnc"
     echo
-    echo "  3. Read the documentation:"
+    echo "  3. Start the control panel (optional):"
+    echo "     npm run panel"
+    echo "     # -> open http://127.0.0.1:6180/ (asks for the panel token once)"
+    echo
+    echo "  4. Read the documentation:"
     echo "     cat docs/LIVE-DRIVE.md"
+    echo
+    echo "  5. Quick panel smoke test (optional):"
+    echo "     curl -s -u any:$(node -pe \"require('./datastore/panel-state.json').token\" 2>/dev/null || echo none) http://127.0.0.1:6180/api/health"
     echo
     exit 0
   else

@@ -5,6 +5,7 @@
   "description": "Stealth headed Google Chrome driven live via VNC + Playwright CDP",
   "scripts": {
     "vnc": "bash scripts/vnc-server.sh",
+    "panel": "node control/panel-server.js",
     "live": "node scripts/live.js",
     "live-run": "node scripts/live-run.js",
     "connect": "node scripts/connect.js",

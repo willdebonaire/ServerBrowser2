@@ -124,6 +124,64 @@ npm run standalone -- ai chat echo "hi" # scriptable CLI (browser/tunnel/ai/api-
 
 Everything is documented in [docs/LIVE-DRIVE.md](docs/LIVE-DRIVE.md).
 
+## Web Control Panel
+
+A local web UI to run, watch and stop the whole ServerBrowser stack — live sessions, stored scripts, VNC, and browser definitions — no terminal required.
+
+```bash
+npm run panel          # start http://127.0.0.1:6180/
+```
+
+Open it in a browser. The first load (or any API request) asks for a token:
+
+- `?pw=<token>` on the URL — the panel sets an `sb_panel` cookie for the session
+- HTTP Basic — any username, the token as the password (curl: `-u any:TOKEN`)
+- `PANEL_TOKEN=<hex> npm run panel` to pick your own token
+- `PANEL_NO_AUTH=1` to disable auth locally (loopback only)
+
+The token is generated on first start into `datastore/panel-state.json` (mode 0600).
+
+### What you can do
+
+| Task | UI |
+|---|---|
+| Start / watch / shut down sessions | Sessions tab — Start, Restart, Shut down + global actions |
+| Run stored scripts on a live session | Scripts tab — create/edit/run/kill, live log over SSE |
+| View the VNC screen | VNC button / embedded iframe / snapshot on every session card |
+| Change the VNC password | Settings → per session (only x11vnc restarts; browser stays up) |
+| Manage browser definitions | Browsers tab — launch from a saved definition, attach to an existing Chrome, local-chrome attach |
+
+### API
+
+All JSON. Jobs return `202` + `{ job }`; progress streams over `GET /api/events` (SSE).
+
+- `GET    /api/health` — panel + session count, bind, auth state, uptime
+- `GET    /api/sessions` `POST /api/sessions` — list / create
+- `GET    /api/sessions/:name` `DELETE /api/sessions/:name` — inspect / remove
+- `POST   /api/sessions/:name/restart` — same-config restart (profile + cookies survive)
+- `GET    /api/sessions/:name/logs?tail=N` — ring log
+- `GET    /api/sessions/:name/viewer-url` — noVNC URL with viewer options
+- `PUT    /api/sessions/:name/vnc-password` `DELETE /api/sessions/:name/vnc-password` — set / clear
+- `PATCH  /api/sessions/:name/settings` — screen, browser, start URL, viewer options
+- `GET    /api/scripts` `POST /api/scripts` — list / create
+- `GET    /api/scripts/:name` `PUT /api/scripts/:name` `DELETE /api/scripts/:name` — read / write / trash
+- `POST   /api/scripts/:name/run` — `{"session","args[]"}` → run on a live session
+- `GET    /api/runs` `GET /api/runs/:id/logs` `DELETE /api/runs/:id` — run history / log / kill
+- `GET    /api/browsers` `POST /api/browsers` — list / create definitions
+- `POST   /api/browsers/:id/launch` — start a session from a definition
+- `POST   /api/browsers/attach-local` — attach the VNC stack to an already-running Chrome over CDP
+
+Sessions are detached & survive a panel restart. They are reconciled on boot
+and adopted as `unmanaged` until you control them.
+
+### Security
+
+The panel binds `127.0.0.1` by default. Every request carries a token
+(`PANEL_TOKEN` or generated). CSRF is guarded by `Origin`/`Host` validation on
+state-changing methods; script paths live under `user-scripts/` with a
+filename allowlist; destructive actions are written to
+`datastore/panel-audit.log` (0600). CDP stays loopback-only per session.
+
 
 ## Notes / limitations
 
